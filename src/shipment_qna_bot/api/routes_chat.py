@@ -52,7 +52,9 @@ async def chat_endpoint(payload: ChatRequest) -> ChatAnswer:
 
     evidence_items = [
         EvidenceItem(
-            doc_id="doc123", container_number="CONT456", field_used=["field1", "field2"]
+            doc_id="doc123",
+            container_number="CONT456789",
+            field_used=["field1", "field2"],
         )
     ]
 

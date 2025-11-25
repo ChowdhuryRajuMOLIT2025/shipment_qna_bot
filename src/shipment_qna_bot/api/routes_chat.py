@@ -1,0 +1,68 @@
+# src/shipment_qna_bot/api/routes_chat.py
+
+from typing import List  # type: ignore
+
+from fastapi import APIRouter
+
+from shipment_qna_bot.logging.logger import logger, set_log_context
+from shipment_qna_bot.models.schemas import (ChatAnswer, ChatRequest,
+                                             EvidenceItem)
+
+router = APIRouter(tags=["chat"], prefix="/chat")
+
+
+@router.post("/chat", response_model=ChatAnswer)
+async def chat_endpoint(payload: ChatRequest) -> ChatAnswer:
+    """
+    Main `chat` endpoint to handle chat requests related to shipment queries.
+    For now:
+        - sets logging context (conversation_id, consignee_codes)
+        - logs basic request info
+        - returns stub response
+    Later we can switch or add new context:
+        - will call LangGraph runner with this payload
+    """
+
+    # ensure payload always have convesation_id and its always ahas a value associated with it
+    conversation_id = payload.conversation_id or "conv-auto"
+
+    # set and update logging context for each request
+    set_log_context(
+        conversation_id=conversation_id,
+        consignee_codes=payload.consignee_codes,
+        # intent will be set by the intent classifier ode later
+    )
+
+    logger.info(
+        f"Received chat request: question= '{payload.question}...'"
+        f"consignees = {payload.consignee_codes}",
+        extra={"step": "API:/chat"},
+    )
+
+    # TODO: call LangGraph execution here.
+    # For now, stub response to verify logs pipeline.
+    # Placeholder logic for processing the chat request
+    # In a production implementation, this would involve NLP processing, database queries, etc.
+
+    answer_text = (
+        "Chat backend is wired and logging context is set. "
+        "Graph integration will be added next."
+        f"Processed question: {payload.question}"
+    )
+
+    evidence_items = [
+        EvidenceItem(
+            doc_id="doc123", container_number="CONT456", field_used=["field1", "field2"]
+        )
+    ]
+
+    response = ChatAnswer(
+        intent=None,
+        answer=answer_text,
+        notices=["[dev] graph not wired yet; this is a stub answer"],
+        evidence=evidence_items,
+    )
+
+    logger.info(f"Responding with answer: {response.answer}")
+
+    return response

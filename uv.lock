@@ -2029,7 +2029,7 @@ wheels = [
 [[package]]
 name = "shipment-qna-bot"
 version = "2.11.24"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "azure-identity" },
     { name = "azure-search-documents" },

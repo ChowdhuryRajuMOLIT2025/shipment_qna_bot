@@ -1,5 +1,8 @@
 # src/shipment_qna_bot/api/main.py
-
+#################
+# call sign for running the app
+# uv run uvicorn shipment_qna_bot.api.main:app --reload --host=127.0.0.1 --port=8000
+#################
 from fastapi import FastAPI
 
 from shipment_qna_bot.api.routes_chat import \

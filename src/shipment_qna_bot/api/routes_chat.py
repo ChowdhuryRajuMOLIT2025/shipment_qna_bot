@@ -2,17 +2,17 @@
 
 from typing import List  # type: ignore
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.models.schemas import (ChatAnswer, ChatRequest,
                                              EvidenceItem)
 
-router = APIRouter(tags=["chat"], prefix="/chat")
+router = APIRouter(tags=["chat"], prefix="/api")
 
 
 @router.post("/chat", response_model=ChatAnswer)
-async def chat_endpoint(payload: ChatRequest) -> ChatAnswer:
+async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     """
     Main `chat` endpoint to handle chat requests related to shipment queries.
     For now:
@@ -25,6 +25,8 @@ async def chat_endpoint(payload: ChatRequest) -> ChatAnswer:
 
     # ensure payload always have convesation_id and its always ahas a value associated with it
     conversation_id = payload.conversation_id or "conv-auto"
+    request.state.conversation_id = conversation_id
+    request.state.consignee_codes = payload.consignee_codes
 
     # set and update logging context for each request
     set_log_context(

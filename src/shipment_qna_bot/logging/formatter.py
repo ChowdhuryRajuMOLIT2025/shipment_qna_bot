@@ -46,7 +46,7 @@ class ShipmentQnaFormatter(logging.Formatter):
         line = (
             f"shipment_qna_bot_{timestamp_str}: {step} => "
             f"{level} trace={trace_id} conv={conversation_id} intent={intent}"
-            f"consignees={consignee_codes} - {msg}"
+            f" consignees={consignee_codes} - {msg}"
         )
 
         return line

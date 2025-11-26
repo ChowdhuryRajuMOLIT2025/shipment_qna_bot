@@ -86,6 +86,9 @@ def get_logger() -> logging.Logger:  # type: ignore
     logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())  # type: ignore
     logger.propagate = False  # prevent double logging if root logger
 
+    # clear if any previous broken handlers was present
+    logger.handlers.clear()
+
     # ensure Logs direcory exists to hold log files
     logs_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"
@@ -112,7 +115,7 @@ def get_logger() -> logging.Logger:  # type: ignore
     file_handler.addFilter(context_filter)
 
     # add handlers to logger
-    logger.addFilter(console_handler)
+    logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 
     _logger = logger

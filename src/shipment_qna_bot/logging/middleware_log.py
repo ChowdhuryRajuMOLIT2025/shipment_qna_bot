@@ -7,7 +7,7 @@ from typing import Awaitable, Callable
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .logger import logger, set_log_context
+from shipment_qna_bot.logging.logger import logger, set_log_context
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
@@ -26,9 +26,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         # conversation_id can be in header or later in the body, here we grab it from header if present
         conversation_id = request.headers.get("X-Conversation-Id", "-")
+        conv = getattr(request.state, "conversation_id", conversation_id)
+        cons = getattr(request.state, "consignee_codes", None)
 
         # set minimal logging context, intent & consignee can be filled later inside the graph/route
-        set_log_context(trace_id=trace_id, conversation_id=conversation_id)
+        set_log_context(trace_id=trace_id, conversation_id=conv, consignee_codes=cons)
 
         start = time.perf_counter()
 
@@ -40,6 +42,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
+            response.headers["X-Trace-Id"] = trace_id
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             logger.error(

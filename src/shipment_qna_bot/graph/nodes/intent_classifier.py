@@ -55,3 +55,12 @@ def intent_classifier_node(state: Dict[str, Any]) -> Dict[str, Any]:
             extra={"step": "NODE: IntentClassifier"},
         )
         return state
+
+
+#######################
+# TODO: as below
+"""
+Later, when build the LangGraph graph, this node will be plugged in,
+and all logs after it will show intent=<value> in custom format.
+"""
+#######################

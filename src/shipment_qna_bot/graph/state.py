@@ -4,46 +4,47 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from typing_extensions import NotRequired, TypedDict
 
-@dataclass
-class GraphState:
+
+class GraphState(TypedDict):
     # holding user request context
     conversation_id: str
     question_raw: str
     consignee_codes: List[str]
 
     # derived working fields from raw input
-    normalized_question: str = ""
-    intent: str = ""  # status/eta_window/delay_reason/route...etc
+    normalized_question: NotRequired[str] = ""
+    intent: NotRequired[str] = ""  # status/eta_window/delay_reason/route...etc
 
     # ranking identifiers :[score, confidence]
-    container_numbers: List[Tuple[str, float]] = field(default_factory=list)
-    po_numbers: List[Tuple[str, float]] = field(default_factory=list)
-    obl_numbers: List[Tuple[str, float]] = field(default_factory=list)
-    booking_numbers: List[Tuple[str, float]] = field(default_factory=list)
+    container_numbers: NotRequired[List[Tuple[str, float]]]
+    po_numbers: NotRequired[List[Tuple[str, float]]]
+    obl_numbers: NotRequired[List[Tuple[str, float]]]
+    booking_numbers: NotRequired[List[Tuple[str, float]]]
 
-    time_window_days: Optional[int] = None
+    time_window_days: NotRequired[Optional[int]]
 
     # planning for retrieval of relevent docs from the vector store
-    retrieval_plan: Dict[str, Any] = field(default_factory=dict)
-    hits: List[Dict[str, Any]] = field(
-        default_factory=list
-    )  # e.g. {doc_id, store, any field related to jsonl metadata}
-    claims: List[Dict[str, Any]] = field(
-        default_factory=list
-    )  # e.g. use for evidences {field, value, evidence_doc_id}
+    retrieval_plan: NotRequired[Dict[str, Any]]
+    hits: NotRequired[
+        List[Dict[str, Any]]
+    ]  # e.g. {doc_id, store, any field related to jsonl metadata}
+    claims: NotRequired[
+        List[Dict[str, Any]]
+    ]  # e.g. use for evidences {field, value, evidence_doc_id}
 
     # critical fields for final response and looping
-    round: int = 0
-    max_rounds: int = 5
-    ungrounded: bool = False
-    leakage_attempt: bool = False
-    missing_field: List[str] = field(default_factory=list)
+    round: NotRequired[int]
+    max_rounds: NotRequired[int]
+    ungrounded: NotRequired[bool]
+    leakage_attempt: NotRequired[bool]
+    missing_field: NotRequired[List[str]]
 
     # final bot response fields
-    answer_text: str = ""
-    notices: List[str] = field(default_factory=list)
-    evidences: List[Dict[str, Any]] = field(default_factory=list)
+    answer_text: NotRequired[str]
+    notices: NotRequired[List[str]]
+    evidences: NotRequired[List[Dict[str, Any]]]
 
     def to_log_dict(self) -> Dict[str, Any]:
         """Small safe subset for logs (avoid dumping everything) fetched from doc metadata."""

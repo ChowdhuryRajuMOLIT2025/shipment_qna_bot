@@ -4,6 +4,7 @@ from typing import List  # type: ignore
 
 from fastapi import APIRouter, Request
 
+from shipment_qna_bot.graph.builder import run_graph
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.models.schemas import (ChatAnswer, ChatRequest,
                                              EvidenceItem)
@@ -46,25 +47,24 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # Placeholder logic for processing the chat request
     # In a production implementation, this would involve NLP processing, database queries, etc.
 
-    answer_text = (
-        "Chat backend is wired and logging context is set. "
-        "Graph integration will be added next."
-        f"Processed question: {payload.question}"
+    result = run_graph(
+        {
+            "conversation_id": conversation_id,
+            "question_raw": payload.question,
+            "consignee_codes": payload.consignee_codes,
+        }
     )
 
-    evidence_items = [
-        EvidenceItem(
-            doc_id="doc123",
-            container_number="CONT456789",
-            field_used=["field1", "field2"],
-        )
-    ]
+    logger.info(
+        f"Responding with answer: {result.answer_text}",
+        extra={"step": "API:/chat"},
+    )
 
     response = ChatAnswer(
-        intent=None,
-        answer=answer_text,
-        notices=["[dev] graph not wired yet; this is a stub answer"],
-        evidence=evidence_items,
+        intent=result.intent,
+        answer=result.answer_text,
+        notices=result.notices,
+        evidence=result.evidence,
     )
 
     logger.info(f"Responding with answer: {response.answer}")

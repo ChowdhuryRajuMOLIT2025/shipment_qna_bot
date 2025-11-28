@@ -1,4 +1,6 @@
 # src/shipment_qna_bot/graph/builder.py
+
+# bind LG with user query -> normalize -> intent -> formatter -> end
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -124,7 +126,7 @@ def run_graph(payload: Dict[str, Any]) -> GraphState:
     # set logging context at graph entry point (route level but double safe)
     set_log_context(
         conversation_id=state.conversation_id,
-        question_raw=state.question_raw,
+        # question_raw=state.question_raw,
         consignee_codes=state.consignee_codes,
     )
 

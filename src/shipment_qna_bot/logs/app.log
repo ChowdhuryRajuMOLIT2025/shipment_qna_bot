@@ -30,3 +30,104 @@ shipment_qna_bot_28_Nov_25_12_53: shipment_qna_bot => INFO trace=f861d214-8174-4
 -consignee_codes received: ['0002990']
 
 shipment_qna_bot_28_Nov_25_12_53: API:RESPONSE => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=- intent=- consignees= - Completed request: POST /api/chat with status=200in  22.7ms
+shipment_qna_bot_28_Nov_25_14_40: API:REQUEST => INFO trace=0b3691cf-4f73-4dd1-b9ac-d49ca5dfd9cf conv=- intent=- consignees= - Incoming request: GET /docs
+shipment_qna_bot_28_Nov_25_14_40: API:RESPONSE => INFO trace=0b3691cf-4f73-4dd1-b9ac-d49ca5dfd9cf conv=- intent=- consignees= - Completed request: GET /docs with status=200in  1.3ms
+shipment_qna_bot_28_Nov_25_14_40: API:REQUEST => INFO trace=7e4bf9b6-c29a-4061-a818-e985dd917886 conv=- intent=- consignees= - Incoming request: GET /openapi.json
+shipment_qna_bot_28_Nov_25_14_40: API:RESPONSE => INFO trace=7e4bf9b6-c29a-4061-a818-e985dd917886 conv=- intent=- consignees= - Completed request: GET /openapi.json with status=200in  10.1ms
+shipment_qna_bot_28_Nov_25_14_41: API:REQUEST => INFO trace=956fb0ba-691a-4dc1-9622-230acc73f6ae conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_28_Nov_25_14_41: API:/chat => INFO trace=956fb0ba-691a-4dc1-9622-230acc73f6ae conv=string intent=- consignees=0002990 - Received chat request: question= 'show me the rout for my all open po...'consignees = ['0002990']
+shipment_qna_bot_28_Nov_25_14_41: NODE:QueryNormalizer => INFO trace=956fb0ba-691a-4dc1-9622-230acc73f6ae conv=string intent=- consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_14_41: NODE:QueryNormalizer => INFO trace=956fb0ba-691a-4dc1-9622-230acc73f6ae conv=string intent=- consignees=0002990 - Normalized question: show me the rout for my all open po
+shipment_qna_bot_28_Nov_25_14_41: NODE:QueryNormalizer => INFO trace=956fb0ba-691a-4dc1-9622-230acc73f6ae conv=string intent=- consignees=0002990 - Exiting node after  0.5 ms
+shipment_qna_bot_28_Nov_25_14_45: API:REQUEST => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_28_Nov_25_14_45: API:/chat => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Received chat request: question= 'show me the rout for my all open po...'consignees = ['0002990']
+shipment_qna_bot_28_Nov_25_14_45: NODE:QueryNormalizer => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_14_45: NODE:QueryNormalizer => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Normalized question: show me the rout for my all open po
+shipment_qna_bot_28_Nov_25_14_45: NODE:QueryNormalizer => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Exiting node after  0.5 ms
+shipment_qna_bot_28_Nov_25_14_45: NODE:IntentClassifier => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_14_45: NODE:IntentClassifier => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=status consignees=0002990 - Intent classified as: "status"
+shipment_qna_bot_28_Nov_25_14_45: NODE:IntentClassifier => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=status consignees=0002990 - Exiting node after  0.7 ms
+shipment_qna_bot_28_Nov_25_14_45: NODE:Formatter => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=status consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_14_45: NODE:Formatter => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=status consignees=0002990 - Prepared stub response (graph wired, tools not yet integrated).
+Basic Answer: "[DEV] Graph is wired up.
+-intent: status
+-normalized_question: show me the rout for my all open po
+-consignee_codes received: ['0002990']
+"
+
+shipment_qna_bot_28_Nov_25_14_45: NODE:Formatter => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=status consignees=0002990 - Exiting node after  0.7 ms
+shipment_qna_bot_28_Nov_25_14_45: API:/chat => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Responding with answer: [DEV] Graph is wired up.
+-intent: status
+-normalized_question: show me the rout for my all open po
+-consignee_codes received: ['0002990']
+
+shipment_qna_bot_28_Nov_25_14_45: shipment_qna_bot => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=string intent=- consignees=0002990 - Responding with answer: [DEV] Graph is wired up.
+-intent: status
+-normalized_question: show me the rout for my all open po
+-consignee_codes received: ['0002990']
+
+shipment_qna_bot_28_Nov_25_14_45: API:RESPONSE => INFO trace=5891c7d5-a7f5-4ac3-b4b1-2467e5c4f99c conv=- intent=- consignees= - Completed request: POST /api/chat with status=200in  17.1ms
+shipment_qna_bot_28_Nov_25_17_42: API:REQUEST => INFO trace=982fc15f-f0ff-44be-92a4-492f1d21883f conv=- intent=- consignees= - Incoming request: GET /docs
+shipment_qna_bot_28_Nov_25_17_42: API:RESPONSE => INFO trace=982fc15f-f0ff-44be-92a4-492f1d21883f conv=- intent=- consignees= - Completed request: GET /docs with status=200in  1.3ms
+shipment_qna_bot_28_Nov_25_17_42: API:REQUEST => INFO trace=c2cc09d2-9755-472a-8e80-8d68b5821b4f conv=- intent=- consignees= - Incoming request: GET /openapi.json
+shipment_qna_bot_28_Nov_25_17_42: API:RESPONSE => INFO trace=c2cc09d2-9755-472a-8e80-8d68b5821b4f conv=- intent=- consignees= - Completed request: GET /openapi.json with status=200in  14.5ms
+shipment_qna_bot_28_Nov_25_17_43: API:REQUEST => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_28_Nov_25_17_43: API:/chat => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Received chat request: question= 'show me the route for all my open po...'consignees = ['0008666']
+shipment_qna_bot_28_Nov_25_17_43: NODE:QueryNormalizer => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Entering node with state: intent=-, normalized_question=-, consignee_codes=['0008666']
+shipment_qna_bot_28_Nov_25_17_43: NODE:QueryNormalizer => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Normalized question: show me the route for all my open po
+shipment_qna_bot_28_Nov_25_17_43: NODE:QueryNormalizer => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Exiting node after  1.4 ms
+shipment_qna_bot_28_Nov_25_17_43: NODE:IntentClassifier => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Entering node with state: intent=-, normalized_question=show me the route for all my open po, consignee_codes=['0008666']
+shipment_qna_bot_28_Nov_25_17_43: NODE:IntentClassifier => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=route consignees=0008666 - Intent classified as: "route"
+shipment_qna_bot_28_Nov_25_17_43: NODE:IntentClassifier => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=route consignees=0008666 - Exiting node after  1.6 ms
+shipment_qna_bot_28_Nov_25_17_43: NODE:Formatter => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=route consignees=0008666 - Entering node with state: intent=route, normalized_question=show me the route for all my open po, consignee_codes=['0008666']
+shipment_qna_bot_28_Nov_25_17_43: NODE:Formatter => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=route consignees=0008666 - Prepared stub response (graph wired, tools not yet integrated).
+Basic Answer: "[DEV] Graph is wired up.
+-intent: route
+-normalized_question: show me the route for all my open po
+-consignee_codes received: ['0008666']
+"
+
+shipment_qna_bot_28_Nov_25_17_43: NODE:Formatter => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=route consignees=0008666 - Exiting node after  2.7 ms
+shipment_qna_bot_28_Nov_25_17_43: API:/chat => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Responding with answer: [DEV] Graph is wired up.
+-intent: route
+-normalized_question: show me the route for all my open po
+-consignee_codes received: ['0008666']
+
+shipment_qna_bot_28_Nov_25_17_43: shipment_qna_bot => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=string intent=- consignees=0008666 - Responding with answer: [DEV] Graph is wired up.
+-intent: route
+-normalized_question: show me the route for all my open po
+-consignee_codes received: ['0008666']
+
+shipment_qna_bot_28_Nov_25_17_43: API:RESPONSE => INFO trace=03f1de0d-95f2-4a28-a580-5acb15bd6bd3 conv=- intent=- consignees= - Completed request: POST /api/chat with status=200in  81.8ms
+shipment_qna_bot_28_Nov_25_17_48: API:REQUEST => INFO trace=614bc623-7a57-4c4b-8dda-9af7198dfa9c conv=- intent=- consignees= - Incoming request: GET /docs
+shipment_qna_bot_28_Nov_25_17_48: API:RESPONSE => INFO trace=614bc623-7a57-4c4b-8dda-9af7198dfa9c conv=- intent=- consignees= - Completed request: GET /docs with status=200in  1.5ms
+shipment_qna_bot_28_Nov_25_17_48: API:REQUEST => INFO trace=46d8d4bd-d506-4db5-a060-43a4d0b58df6 conv=- intent=- consignees= - Incoming request: GET /openapi.json
+shipment_qna_bot_28_Nov_25_17_48: API:RESPONSE => INFO trace=46d8d4bd-d506-4db5-a060-43a4d0b58df6 conv=- intent=- consignees= - Completed request: GET /openapi.json with status=200in  15.7ms
+shipment_qna_bot_28_Nov_25_17_48: API:REQUEST => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_28_Nov_25_17_48: API:/chat => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Received chat request: question= 'show me the route for all my open po...'consignees = ['0008666']
+shipment_qna_bot_28_Nov_25_17_48: NODE:QueryNormalizer => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Entering node with state: intent=-, normalized_question=-, consignee_codes=['0008666']
+shipment_qna_bot_28_Nov_25_17_48: NODE:QueryNormalizer => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Normalized question: show me the route for all my open po
+shipment_qna_bot_28_Nov_25_17_48: NODE:QueryNormalizer => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Exiting node after  0.6 ms
+shipment_qna_bot_28_Nov_25_17_48: NODE:IntentClassifier => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Entering node with state: intent=-, normalized_question=show me the route for all my open po, consignee_codes=['0008666']
+shipment_qna_bot_28_Nov_25_17_48: NODE:IntentClassifier => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=route consignees=0008666 - Intent classified as: "route"
+shipment_qna_bot_28_Nov_25_17_48: NODE:IntentClassifier => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=route consignees=0008666 - Exiting node after  1.4 ms
+shipment_qna_bot_28_Nov_25_17_48: NODE:Formatter => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=route consignees=0008666 - Entering node with state: intent=route, normalized_question=show me the route for all my open po, consignee_codes=['0008666']
+shipment_qna_bot_28_Nov_25_17_48: NODE:Formatter => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=route consignees=0008666 - Prepared stub response (graph wired, tools not yet integrated).
+Basic Answer: "[DEV] Graph is wired up.
+-intent: route
+-normalized_question: show me the route for all my open po
+-consignee_codes received: ['0008666']
+"
+
+shipment_qna_bot_28_Nov_25_17_48: NODE:Formatter => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=route consignees=0008666 - Exiting node after  1.6 ms
+shipment_qna_bot_28_Nov_25_17_48: API:/chat => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Responding with answer: [DEV] Graph is wired up.
+-intent: route
+-normalized_question: show me the route for all my open po
+-consignee_codes received: ['0008666']
+
+shipment_qna_bot_28_Nov_25_17_48: shipment_qna_bot => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Responding with answer: [DEV] Graph is wired up.
+-intent: route
+-normalized_question: show me the route for all my open po
+-consignee_codes received: ['0008666']
+
+shipment_qna_bot_28_Nov_25_17_48: API:RESPONSE => INFO trace=b5a4aaec-2399-4c56-bbd2-bdc04c3f577e conv=string intent=- consignees=0008666 - Completed request: POST /api/chat with status=200in  28.5ms

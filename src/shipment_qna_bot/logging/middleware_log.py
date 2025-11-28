@@ -53,6 +53,14 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             )
             raise
 
+        # Re-apply context from request.state in case it was updated during request processing
+        # ContextVars are not propagated back from the route handler, so need to refresh them here.
+        final_conv = getattr(request.state, "conversation_id", conversation_id)
+        final_cons = getattr(request.state, "consignee_codes", cons)
+        set_log_context(
+            trace_id=trace_id, conversation_id=final_conv, consignee_codes=final_cons
+        )
+
         duration_ms = (time.perf_counter() - start) * 1000
         logger.info(
             f"Completed request: {request.method} {request.url.path} with status={response.status_code}"

@@ -12,6 +12,14 @@ from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 
 
+def sync_log_context_from_state(state: Dict[str, Any]) -> None:
+    set_log_context(
+        conversation_id=state.get("conversation_id", "-"),
+        consignee_codes=state.get("consignee_codes", []),
+        intent=state.get("intent", "-"),
+    )
+
+
 def _log_summary(state: Dict[str, Any]) -> Dict[str, Any]:
     """Small safe subset of state for logging."""
     return {
@@ -29,6 +37,7 @@ def _log_summary(state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    sync_log_context_from_state(state)
     with log_node_execution("QueryNormalizer", _log_summary(state)):
         q = (state.get("question_raw") or "").strip()
 
@@ -46,6 +55,8 @@ def intent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """Minimal rules-based intent classifier.
     - Will replace later with LLM or better rules.
     """
+    state["intent"] = "-"
+    sync_log_context_from_state(state)
     with log_node_execution("IntentClassifier", _log_summary(state)):
         q = state.get("normalized_question") or ""
 
@@ -81,6 +92,7 @@ def formatter_node(state: GraphState) -> GraphState:
     Minimal formatter that produces a basic raw response.
     Later: Will do citations/evidence mapping.
     """
+    sync_log_context_from_state(state)
     with log_node_execution("Formatter", _log_summary(state)):
         # NOTE: This is just to prove graph wiring + logging. No RAG yet.
         state["answer_text"] = (

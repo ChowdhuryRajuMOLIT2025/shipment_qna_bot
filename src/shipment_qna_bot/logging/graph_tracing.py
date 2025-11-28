@@ -15,12 +15,9 @@ def _summarize_state(state: Dict[str, Any]) -> str:
     """
     # keys adjustment based on dataclass of state
     keys_of_interest = [
-        "label",
-        "container_numbers",
-        "po_numbers",
-        "obl_numbers",
-        "booking_numbers",
-        "time_window_days",
+        "intent",
+        "normalized_question",
+        "consignee_codes",
     ]
     parts = []
     for key in keys_of_interest:
@@ -37,7 +34,7 @@ def log_node_execution(node_name: str, state_snapshot: Dict[str, Any]) -> None: 
     - with log_node_execution("RetrievalPlanner", state.to_dict()):
     ...node logic ...
     """
-    step = f"NODE: {node_name}"
+    step = f"NODE:{node_name}"
     summary = _summarize_state(state_snapshot)
 
     logger.info(f"Entering node with state: {summary}", extra={"step": step})

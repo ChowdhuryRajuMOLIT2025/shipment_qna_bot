@@ -15,4 +15,4 @@ app = FastAPI(title="MCS Shipment Chat Bot")
 app.add_middleware(RequestLoggingMiddleware)
 
 # routers as chat_router as rote via user intention hook
-app.include_router(chat_router, prefix="/api")  # type: ignore
+app.include_router(chat_router)

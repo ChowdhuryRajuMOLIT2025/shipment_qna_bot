@@ -56,15 +56,15 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     )
 
     logger.info(
-        f"Responding with answer: {result.answer_text}",
+        f"Responding with answer: {result['answer_text']}",
         extra={"step": "API:/chat"},
     )
 
     response = ChatAnswer(
-        intent=result.intent,
-        answer=result.answer_text,
-        notices=result.notices,
-        evidence=result.evidence,
+        intent=result["intent"],
+        answer=result["answer_text"],
+        notices=result["notices"],
+        # evidence=result['evidence'],
     )
 
     logger.info(f"Responding with answer: {response.answer}")

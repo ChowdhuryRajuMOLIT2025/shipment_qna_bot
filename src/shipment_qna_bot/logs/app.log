@@ -1,8 +1,32 @@
-shipment_qna_bot_28_Nov_25_11_27: API:REQUEST => INFO trace=26f628b3-f5a0-4a9f-a4b3-251f542141b2 conv=- intent=- consignees= - Incoming request: GET /docs
-shipment_qna_bot_28_Nov_25_11_27: API:RESPONSE => INFO trace=26f628b3-f5a0-4a9f-a4b3-251f542141b2 conv=- intent=- consignees= - Completed request: GET /docs with status=200in  1.8ms
-shipment_qna_bot_28_Nov_25_11_27: API:REQUEST => INFO trace=f5bc4b59-d339-4a01-978e-1f48b7a9d33e conv=- intent=- consignees= - Incoming request: GET /openapi.json
-shipment_qna_bot_28_Nov_25_11_27: API:RESPONSE => INFO trace=f5bc4b59-d339-4a01-978e-1f48b7a9d33e conv=- intent=- consignees= - Completed request: GET /openapi.json with status=200in  24.6ms
-shipment_qna_bot_28_Nov_25_11_28: API:REQUEST => INFO trace=3c702f98-5a1e-4fb7-bb2b-f057fc5f56f1 conv=- intent=- consignees= - Incoming request: POST /api/api/chat
-shipment_qna_bot_28_Nov_25_11_28: API:/chat => INFO trace=3c702f98-5a1e-4fb7-bb2b-f057fc5f56f1 conv=string intent=- consignees=0002990 - Received chat request: question= 'show all milestones achieved by ONEU5109032...'consignees = ['0002990']
-shipment_qna_bot_28_Nov_25_11_31: API:REQUEST => INFO trace=aa5b5b75-cc40-41ea-bc07-1ab5c6d982f6 conv=- intent=- consignees= - Incoming request: POST /api/api/chat
-shipment_qna_bot_28_Nov_25_11_31: API:/chat => INFO trace=aa5b5b75-cc40-41ea-bc07-1ab5c6d982f6 conv=string intent=- consignees=0002990 - Received chat request: question= 'show all milestones achieved by ONEU5109032...'consignees = ['0002990']
+shipment_qna_bot_28_Nov_25_12_53: API:REQUEST => INFO trace=f91a92e3-819d-4724-925c-f1cd5f68d692 conv=- intent=- consignees= - Incoming request: GET /docs
+shipment_qna_bot_28_Nov_25_12_53: API:RESPONSE => INFO trace=f91a92e3-819d-4724-925c-f1cd5f68d692 conv=- intent=- consignees= - Completed request: GET /docs with status=200in  1.0ms
+shipment_qna_bot_28_Nov_25_12_53: API:REQUEST => INFO trace=3e8913bd-2100-49ed-b429-63acccaf6866 conv=- intent=- consignees= - Incoming request: GET /openapi.json
+shipment_qna_bot_28_Nov_25_12_53: API:RESPONSE => INFO trace=3e8913bd-2100-49ed-b429-63acccaf6866 conv=- intent=- consignees= - Completed request: GET /openapi.json with status=200in  10.3ms
+shipment_qna_bot_28_Nov_25_12_53: API:REQUEST => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_28_Nov_25_12_53: API:/chat => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Received chat request: question= 'show all milestones achieved by ONEU5109032...'consignees = ['0002990']
+shipment_qna_bot_28_Nov_25_12_53: NODE: QueryNormalizer => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_12_53: NODE:QueryNormalizer => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Normalized question: show all milestones achieved by oneu5109032
+shipment_qna_bot_28_Nov_25_12_53: NODE: QueryNormalizer => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Exiting node after  0.6 ms
+shipment_qna_bot_28_Nov_25_12_53: NODE: IntentClassifier => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_12_53: NODE:IntentClassifier => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=status consignees=0002990 - Intent classified as: "status"
+shipment_qna_bot_28_Nov_25_12_53: NODE: IntentClassifier => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=status consignees=0002990 - Exiting node after  0.6 ms
+shipment_qna_bot_28_Nov_25_12_53: NODE: Formatter => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Entering node with state: <no-key-state>
+shipment_qna_bot_28_Nov_25_12_53: NODE:Formatter => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Prepared stub response (graph wired, tools not yet integrated).
+Basic Answer: "[DEV] Graph is wired up.
+-intent: status
+-normalized_question: show all milestones achieved by oneu5109032
+-consignee_codes received: ['0002990']
+"
+
+shipment_qna_bot_28_Nov_25_12_53: NODE: Formatter => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Exiting node after  1.2 ms
+shipment_qna_bot_28_Nov_25_12_53: API:/chat => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Responding with answer: [DEV] Graph is wired up.
+-intent: status
+-normalized_question: show all milestones achieved by oneu5109032
+-consignee_codes received: ['0002990']
+
+shipment_qna_bot_28_Nov_25_12_53: shipment_qna_bot => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=string intent=- consignees=0002990 - Responding with answer: [DEV] Graph is wired up.
+-intent: status
+-normalized_question: show all milestones achieved by oneu5109032
+-consignee_codes received: ['0002990']
+
+shipment_qna_bot_28_Nov_25_12_53: API:RESPONSE => INFO trace=f861d214-8174-47fc-a9d4-88a6bafaba9f conv=- intent=- consignees= - Completed request: POST /api/chat with status=200in  22.7ms

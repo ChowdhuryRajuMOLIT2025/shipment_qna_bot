@@ -28,13 +28,16 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         conversation_id = request.headers.get("X-Conversation-Id", "-")
         conv = getattr(request.state, "conversation_id", conversation_id)
         cons = getattr(request.state, "consignee_codes", None)
+        intent = getattr(request.state, "intent", "-")
 
         # set minimal logging context, intent & consignee can be filled later inside the graph/route
-        set_log_context(trace_id=trace_id, conversation_id=conv, consignee_codes=cons)
+        set_log_context(
+            trace_id=trace_id, conversation_id=conv, consignee_codes=cons, intent=intent
+        )
 
         start = time.perf_counter()
 
-        # Log the incoming request
+        # log the incoming request
         logger.info(
             f"Incoming request: {request.method} {request.url.path}",
             extra={"step": "API:REQUEST"},
@@ -53,12 +56,18 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             )
             raise
 
-        # Re-apply context from request.state in case it was updated during request processing
-        # ContextVars are not propagated back from the route handler, so need to refresh them here.
-        final_conv = getattr(request.state, "conversation_id", conversation_id)
-        final_cons = getattr(request.state, "consignee_codes", cons)
+        # re-apply context from request.state in case it was updated during request processing
+        # contextvars are not propagated back from the route handler, so need to refresh them here.
+        conv = getattr(request.state, "conversation_id", conversation_id)
+        cons = getattr(request.state, "consignee_codes", cons)
+        intent = getattr(request.state, "intent", "-")
+        answer_text = getattr(request.state, "answer_text", "-")
         set_log_context(
-            trace_id=trace_id, conversation_id=final_conv, consignee_codes=final_cons
+            trace_id=trace_id,
+            conversation_id=conv,
+            consignee_codes=cons,
+            intent=intent,
+            # answer_text=answer_text
         )
 
         duration_ms = (time.perf_counter() - start) * 1000

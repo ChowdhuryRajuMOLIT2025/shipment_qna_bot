@@ -2,11 +2,135 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from pydantic import BaseModel, Field, field_validator
 from typing_extensions import NotRequired, TypedDict
 
 
+###################### consignee_codes validation ######################
+# performing right way to handle parent-child relation while posting request using pydantic model
+def _split_codes(s: str) -> List[str]:
+    # Split by comma, strip whitespace, drop empties
+    parts = [p.strip() for p in s.split(",")]
+    return [p for p in parts if p]
+
+
+def _dedupe_preserve_order(items: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+################################## consignee_codes validation end ###########################
+
+############################## Chat Request Payload Validation ##############################
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(
+        ...,
+        description="User's natural language question",
+        min_length=1,
+    )
+    consignee_codes: str = Field(
+        # consignee_codes: Union[List[str], str] = Field(
+        ...,
+        description="Consignee hierarchy (parent first), list[str] preferred; comma-string also accepted",
+    )
+    conversation_id: Optional[str] = Field(
+        None,
+        description="Conversation/session identifier. Optional; server generates if missing.",
+    )
+
+    @field_validator("question", mode="before")
+    @classmethod
+    def normalize_question(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("question is required")
+        q = str(v).strip()
+        if not q:
+            raise ValueError("question cannot be empty")
+        return q
+
+    @field_validator("conversation_id", mode="before")
+    @classmethod
+    def normalize_conversation_id(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+    @field_validator("consignee_codes", mode="before")
+    @classmethod
+    def normalize_consignee_codes(cls, v: Any) -> List[str]:
+        """Normalizes consignee_codes into list[str], preserving order (parent first).
+        Handles:
+          - str: "0025833, 0001665"
+          - list[str]: ["0025833","0001665"]
+          - list[str] but comma-packed: ["0025833, 0001665"]
+          - mixed list: ["0025833", "0001665, 0003717"]
+        """
+        if v is None:
+            raise ValueError("consignee_codes is required")
+        codes: List[str] = []
+
+        if isinstance(v, str):
+            codes = _split_codes(v)
+        elif isinstance(v, list):
+            for item in v:
+                if item is None:
+                    continue
+                s = str(item).strip()
+                if not s:
+                    continue
+                # split each element because many clients send comma-packed strings in list
+                codes.extend(_split_codes(s))
+        else:
+            # anything else -> attempt string split
+            codes = _split_codes(str(v))
+
+        codes = _dedupe_preserve_order(codes)
+
+        if not codes:
+            raise ValueError("consignee_codes cannot be empty")
+        return codes
+
+
+############################### Chat Request Payload Validation End ###########################
+
+############################## Evidence Model Validation #####################################
+
+
+class EvidenceItem(BaseModel):
+    doc_id: str
+    container_number: Optional[str] = None
+    fields_used: Optional[List[str]] = None
+
+
+############################# Evidence Model Validation End ##################################
+
+####################### Chat Answer Model Validation #####################################
+
+
+class ChatAnswer(BaseModel):
+    # IMPORTANT: return conversation_id so client UI can reuse it
+    conversation_id: str
+
+    intent: Optional[str] = None
+    answer: str
+    notices: Optional[List[str]] = None
+    evidence: Optional[List[EvidenceItem]] = None
+
+
+####################### Chat Answer Model Validation End #####################################
+
+
+############################## Graph State #####################################
 class GraphState(TypedDict):
     # holding user request context
     conversation_id: str
@@ -71,3 +195,6 @@ class GraphState(TypedDict):
             "notices": self.notices,
             "evidences": self.evidences,
         }
+
+
+############################## Graph State End #####################################

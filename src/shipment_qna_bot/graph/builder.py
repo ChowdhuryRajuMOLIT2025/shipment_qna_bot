@@ -7,6 +7,7 @@ from typing import Any, Dict
 
 from langgraph.graph import END, StateGraph
 
+from shipment_qna_bot.graph.nodes.extractor import extractor_node
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
@@ -125,10 +126,12 @@ def build_graph():
 
     graph.add_node("normalize", normalize_node)
     graph.add_node("intent", intent_node)
+    graph.add_node("extract", extractor_node)
     graph.add_node("formatter", formatter_node)
 
     graph.set_entry_point("normalize")
-    graph.add_edge("normalize", "intent")
+    graph.add_edge("normalize", "extract")
+    graph.add_edge("extract", "intent")
     graph.add_edge("intent", "formatter")
     graph.add_edge("formatter", END)
 

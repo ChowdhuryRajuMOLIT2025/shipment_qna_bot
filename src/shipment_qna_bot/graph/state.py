@@ -140,6 +140,12 @@ class GraphState(TypedDict):
     # derived working fields from raw input
     normalized_question: NotRequired[str] = ""
     intent: NotRequired[str] = ""  # status/eta_window/delay_reason/route...etc
+    sub_intents: NotRequired[List[str]]  # status/eta_window/delay_reason/route...etc
+    plan: NotRequired[List[Dict[str, Any]]] = (
+        ""  # status/eta_window/delay_reason/route...etc
+    )
+
+    identifier_candidates: NotRequired[List[str]]
 
     # ranking identifiers :[score, confidence]
     container_numbers: NotRequired[List[Tuple[str, float]]]

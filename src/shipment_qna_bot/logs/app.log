@@ -1,0 +1,58 @@
+shipment_qna_bot_02_Dec_25_11_59: API:REQUEST => INFO trace=2c412187-86e8-432f-a830-de1299d9c69d conv=- intent=- consignees= - Incoming request: GET /docs
+shipment_qna_bot_02_Dec_25_11_59: API:RESPONSE => INFO trace=2c412187-86e8-432f-a830-de1299d9c69d conv=- intent=- consignees= - Completed request: GET /docs with status=200in  1.5ms
+shipment_qna_bot_02_Dec_25_11_59: API:REQUEST => INFO trace=18d2e9cc-7a31-400c-adfa-33d9665bfb8b conv=- intent=- consignees= - Incoming request: GET /openapi.json
+shipment_qna_bot_02_Dec_25_11_59: API:RESPONSE => INFO trace=18d2e9cc-7a31-400c-adfa-33d9665bfb8b conv=- intent=- consignees= - Completed request: GET /openapi.json with status=200in  39.8ms
+shipment_qna_bot_02_Dec_25_11_59: API:REQUEST => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_02_Dec_25_11_59: API:/chat => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=- intent=- consignees= - Normalized consignee_codes(type=<class 'list'>): ['0000866', '234567']
+shipment_qna_bot_02_Dec_25_11_59: API:/chat => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Received chat request: question= 'Let Me KNow the obl are arriving soon?...'consignees = ['0000866', '234567']
+shipment_qna_bot_02_Dec_25_11_59: NODE:QueryNormalizer => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Entering node with state: intent=-, normalized_question=-, consignee_codes=['0000866', '234567']
+shipment_qna_bot_02_Dec_25_11_59: NODE:QueryNormalizer => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Normalized question: let me know the obl are arriving soon?
+shipment_qna_bot_02_Dec_25_11_59: NODE:QueryNormalizer => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Exiting node after  1.5 ms
+shipment_qna_bot_02_Dec_25_11_59: NODE:Extractor => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Entering node with state: intent=-, normalized_question=let me know the obl are arriving soon?, consignee_codes=['0000866', '234567']
+shipment_qna_bot_02_Dec_25_11_59: NODE:Extractor => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Extracted: containers=[] po=[] obl=[] booking=[] time_window_days=7
+shipment_qna_bot_02_Dec_25_11_59: NODE:Extractor => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Exiting node after  2.6 ms
+shipment_qna_bot_02_Dec_25_11_59: NODE:IntentClassifier => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=- consignees=0000866,234567 - Entering node with state: intent=-, normalized_question=let me know the obl are arriving soon?, consignee_codes=['0000866', '234567']
+shipment_qna_bot_02_Dec_25_11_59: NODE:IntentClassifier => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Intent classified as: "eta_window"
+shipment_qna_bot_02_Dec_25_11_59: NODE:IntentClassifier => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Exiting node after  5.3 ms
+shipment_qna_bot_02_Dec_25_11_59: NODE:Formatter => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Entering node with state: intent=eta_window, normalized_question=let me know the obl are arriving soon?, consignee_codes=['0000866', '234567']
+shipment_qna_bot_02_Dec_25_11_59: NODE:Formatter => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Prepared stub response (graph wired, tools not yet integrated).
+Basic Answer: "[DEV] Graph is wired up.
+-intent: eta_window
+-normalized_question: let me know the obl are arriving soon?
+-consignee_codes received: ['0000866', '234567']
+"
+
+shipment_qna_bot_02_Dec_25_11_59: NODE:Formatter => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Exiting node after  0.7 ms
+shipment_qna_bot_02_Dec_25_11_59: API:/chat => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Responding with answer: [DEV] Graph is wired up.
+-intent: eta_window
+-normalized_question: let me know the obl are arriving soon?
+-consignee_codes received: ['0000866', '234567']
+
+shipment_qna_bot_02_Dec_25_11_59: API:RESPONSE => INFO trace=4b5c8868-b256-4e1f-b557-3b75ac263e15 conv=string intent=eta_window consignees=0000866,234567 - Completed request: POST /api/chat with status=200in  61.0ms
+shipment_qna_bot_02_Dec_25_12_45: API:REQUEST => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=- intent=- consignees= - Incoming request: POST /api/chat
+shipment_qna_bot_02_Dec_25_12_45: API:/chat => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=- intent=- consignees= - Normalized consignee_codes(type=<class 'list'>): ['0000866', '0234567']
+shipment_qna_bot_02_Dec_25_12_45: API:/chat => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Received chat request: question= 'Let Me KNow the obl are arriving soon?...'consignees = ['0000866', '0234567']
+shipment_qna_bot_02_Dec_25_12_45: NODE:QueryNormalizer => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Entering node with state: intent=-, normalized_question=-, consignee_codes=['0000866', '0234567']
+shipment_qna_bot_02_Dec_25_12_45: NODE:QueryNormalizer => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Normalized question: let me know the obl are arriving soon?
+shipment_qna_bot_02_Dec_25_12_45: NODE:QueryNormalizer => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Exiting node after  0.5 ms
+shipment_qna_bot_02_Dec_25_12_45: NODE:Extractor => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Entering node with state: intent=-, normalized_question=let me know the obl are arriving soon?, consignee_codes=['0000866', '0234567']
+shipment_qna_bot_02_Dec_25_12_45: NODE:Extractor => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Extracted: containers=[] po=[] obl=[] booking=[] time_window_days=7
+shipment_qna_bot_02_Dec_25_12_45: NODE:Extractor => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Exiting node after  1.0 ms
+shipment_qna_bot_02_Dec_25_12_45: NODE:IntentClassifier => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=- consignees=0000866,0234567 - Entering node with state: intent=-, normalized_question=let me know the obl are arriving soon?, consignee_codes=['0000866', '0234567']
+shipment_qna_bot_02_Dec_25_12_45: NODE:IntentClassifier => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Intent classified as: "eta_window"
+shipment_qna_bot_02_Dec_25_12_45: NODE:IntentClassifier => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Exiting node after  0.5 ms
+shipment_qna_bot_02_Dec_25_12_45: NODE:Formatter => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Entering node with state: intent=eta_window, normalized_question=let me know the obl are arriving soon?, consignee_codes=['0000866', '0234567']
+shipment_qna_bot_02_Dec_25_12_45: NODE:Formatter => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Prepared stub response (graph wired, tools not yet integrated).
+Basic Answer: "[DEV] Graph is wired up.
+-intent: eta_window
+-normalized_question: let me know the obl are arriving soon?
+-consignee_codes received: ['0000866', '0234567']
+"
+
+shipment_qna_bot_02_Dec_25_12_45: NODE:Formatter => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Exiting node after  0.6 ms
+shipment_qna_bot_02_Dec_25_12_45: API:/chat => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Responding with answer: [DEV] Graph is wired up.
+-intent: eta_window
+-normalized_question: let me know the obl are arriving soon?
+-consignee_codes received: ['0000866', '0234567']
+
+shipment_qna_bot_02_Dec_25_12_45: API:RESPONSE => INFO trace=bf309240-b6a3-4939-a47b-0554b574ecee conv=string intent=eta_window consignees=0000866,0234567 - Completed request: POST /api/chat with status=200in  13.8ms

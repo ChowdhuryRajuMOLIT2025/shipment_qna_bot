@@ -50,6 +50,7 @@ def set_log_context(
     conversation_id: Optional[str] = None,
     intent: Optional[str] = None,
     consignee_codes: Optional[Iterable[str]] = None,
+    **_ignored,  # for any unexpected kwargs
 ) -> None:
     """
     Set or Update logging context for current request / graph execution.

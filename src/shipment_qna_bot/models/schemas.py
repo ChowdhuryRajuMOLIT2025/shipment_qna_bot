@@ -46,7 +46,7 @@ class ChatRequest(BaseModel):
 
     @field_validator("consignee_codes", mode="before")
     @classmethod
-    def normalize_consignee_codes(cls, v: Any) -> str:
+    def normalize_consignee_codes(cls, v: Any) -> List[str]:
         if v is None:
             raise ValueError("consignee_codes is required")
 

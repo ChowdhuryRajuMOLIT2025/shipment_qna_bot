@@ -46,11 +46,12 @@ class ContextFilter(logging.Filter):
 
 
 def set_log_context(
+    *,
     trace_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
     intent: Optional[str] = None,
     consignee_codes: Optional[Iterable[str]] = None,
-    **_ignored,  # for any unexpected kwargs
+    **extra: object,  # for any unexpected kwargs
 ) -> None:
     """
     Set or Update logging context for current request / graph execution.

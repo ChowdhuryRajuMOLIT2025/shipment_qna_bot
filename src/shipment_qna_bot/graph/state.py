@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, _TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import NotRequired, TypedDict
@@ -129,16 +129,47 @@ class ChatAnswer(BaseModel):
 
 ####################### Chat Answer Model Validation End #####################################
 
+##################### Retriever Plan ###############################
+
+
+class RetrieverPlan(TypedDict, total=False):
+    query_text: str
+    top_k: int
+    vector_k: int
+    filters: str
+    reason: str
+
+
+##################### Retriever Plan End ###############################
+
+##################### Search hits ###############################
+
+
+class SearchHits(TypedDict, total=False):
+    doc_id: str
+    container_number: str
+    content: str
+    score: float
+    reranker_score: float
+    confidence: float
+    metadata: Dict[str, Any]
+
+
+#################### Search hits End ###############################
+
 
 ############################## Graph State #####################################
 class GraphState(TypedDict):
     # holding user request context
+    trace_id: str
     conversation_id: str
     question_raw: str
+    normalized_question: str
+
+    # authorization context scope
     consignee_codes: List[str]
 
     # derived working fields from raw input
-    normalized_question: NotRequired[str] = ""
     intent: NotRequired[str] = ""  # status/eta_window/delay_reason/route...etc
     sub_intents: NotRequired[List[str]]  # status/eta_window/delay_reason/route...etc
     plan: NotRequired[List[Dict[str, Any]]] = (
@@ -147,7 +178,7 @@ class GraphState(TypedDict):
 
     identifier_candidates: NotRequired[List[str]]
 
-    # ranking identifiers :[score, confidence]
+    # extracted indetifier values  and ranking identifiers :[score, confidence]
     container_numbers: NotRequired[List[Tuple[str, float]]]
     po_numbers: NotRequired[List[Tuple[str, float]]]
     obl_numbers: NotRequired[List[Tuple[str, float]]]
@@ -155,11 +186,14 @@ class GraphState(TypedDict):
 
     time_window_days: NotRequired[Optional[int]]
 
+    # intent resolution
+    intents: List[str]  # ranked
+    primary_intent: str  # first item of intents
+    plan: NotRequired[List[Dict[str, Any]]]
+
     # planning for retrieval of relevent docs from the vector store
-    retrieval_plan: NotRequired[Dict[str, Any]]
-    hits: NotRequired[
-        List[Dict[str, Any]]
-    ]  # e.g. {doc_id, store, any field related to jsonl metadata}
+    retrieval_plan: RetrieverPlan
+    hits: List[SearchHits]
     claims: NotRequired[
         List[Dict[str, Any]]
     ]  # e.g. use for evidences {field, value, evidence_doc_id}
@@ -171,10 +205,11 @@ class GraphState(TypedDict):
     leakage_attempt: NotRequired[bool]
     missing_field: NotRequired[List[str]]
 
-    # final bot response fields
-    answer_text: NotRequired[str]
-    notices: NotRequired[List[str]]
-    evidences: NotRequired[List[Dict[str, Any]]]
+    # response: final bot response fields
+    notices: List[str]
+    answer_text: str
+    evidences: List[Dict[str, Any]]
+    errors: List[str]
 
     def to_log_dict(self) -> Dict[str, Any]:
         """Small safe subset for logs (avoid dumping everything) fetched from doc metadata."""
@@ -200,6 +235,7 @@ class GraphState(TypedDict):
             "answer_text": self.answer_text,
             "notices": self.notices,
             "evidences": self.evidences,
+            "errors": self.errors,
         }
 
 

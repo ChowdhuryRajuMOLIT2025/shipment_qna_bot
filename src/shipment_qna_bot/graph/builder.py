@@ -7,7 +7,16 @@ from typing import Any, Dict
 
 from langgraph.graph import END, StateGraph
 
+from shipment_qna_bot.graph.nodes.answer_stub import answer_stub_node
 from shipment_qna_bot.graph.nodes.extractor import extractor_node
+from shipment_qna_bot.graph.nodes.formatter import \
+    formatter_node  # type: ignore
+from shipment_qna_bot.graph.nodes.intent_classifier import \
+    intent_classifier_node
+from shipment_qna_bot.graph.nodes.normalizer import \
+    query_normalizer_node  # type: ignore
+from shipment_qna_bot.graph.nodes.planner import planner_node
+from shipment_qna_bot.graph.nodes.retrieve import retrieve_node
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
@@ -96,12 +105,15 @@ def formatter_node(state: GraphState) -> GraphState:
     sync_log_context_from_state(state)
     with log_node_execution("Formatter", _log_summary(state)):
         # NOTE: This is just to prove graph wiring + logging. No RAG yet.
-        state["answer_text"] = (
-            f"[DEV] Graph is wired up.\n"
-            f"-intent: {state.get('intent')}\n"
-            f"-normalized_question: {state.get('normalized_question')}\n"
-            f"-consignee_codes received: {state.get('consignee_codes')}\n"
-        )
+        if state.get("answer_text") is not None:
+            return state
+        else:
+            state["answer_text"] = (
+                f"[DEV] Graph is wired up.\n"
+                f"-intent: {state.get('intent')}\n"
+                f"-normalized_question: {state.get('normalized_question')}\n"
+                f"-consignee_codes received: {state.get('consignee_codes')}\n"
+            )
 
         state.setdefault("notices", []).append("[dev] tools not yet integrated...")
         state.setdefault("evidence", [])
@@ -124,16 +136,22 @@ def build_graph():
     except TypeError:
         graph = StateGraph(state_schema=GraphState)
 
-    graph.add_node("normalize", normalize_node)
-    graph.add_node("intent", intent_node)
+    graph.add_node("normalize", query_normalizer_node)
     graph.add_node("extract", extractor_node)
-    graph.add_node("formatter", formatter_node)
+    graph.add_node("classify", intent_classifier_node)
+    graph.add_node("plan", planner_node)
+    graph.add_node("retrieve", retrieve_node)
+    graph.add_node("answer", answer_stub_node)
+    graph.add_node("format", formatter_node)
 
     graph.set_entry_point("normalize")
     graph.add_edge("normalize", "extract")
-    graph.add_edge("extract", "intent")
-    graph.add_edge("intent", "formatter")
-    graph.add_edge("formatter", END)
+    graph.add_edge("extract", "classify")
+    graph.add_edge("classify", "plan")
+    graph.add_edge("plan", "retrieve")
+    graph.add_edge("retrieve", "answer")
+    graph.add_edge("answer", "format")
+    graph.add_edge("format", END)
 
     return graph.compile()
 

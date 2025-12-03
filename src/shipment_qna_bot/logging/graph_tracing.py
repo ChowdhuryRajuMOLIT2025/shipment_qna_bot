@@ -4,8 +4,9 @@ import time
 from contextlib import contextmanager
 from typing import Any, Dict
 
-# from shipment_qna_bot.logging.logger import logger
-from .logger import logger
+from shipment_qna_bot.logging.logger import logger
+
+# from .logger import logger
 
 
 # summarized current state

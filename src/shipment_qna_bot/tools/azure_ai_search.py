@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from azure.ai.search import AzureSearch
+from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 
@@ -18,6 +18,11 @@ except Exception as err:
 
 
 class AzureAISearchTool:
+    """
+    Hybrid search = BM25 keyword(semantic search) + vector query.
+    ALWAYS applies consignee filter (RLS).
+    """
+
     def __init__(self) -> None:
         endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
         api_key = os.getenv("AZURE_SEARCH_API_KEY")
@@ -28,10 +33,11 @@ class AzureAISearchTool:
                 "Missing Azure Search env vars. "
                 "Need AZURE_SEARCH_ENDPOINT, AZURE_SEARCH_API_KEY, AZURE_SEARCH_INDEX_NAME."
             )
+        cred = AzureKeyCredential(api_key) if api_key else DefaultAzureCredential()
 
         self._client = SearchClient(
             endpoint=endpoint,
-            credential=DefaultAzureCredential(),
+            credential=cred,
             index_name=index_name,
         )
 
@@ -42,6 +48,14 @@ class AzureAISearchTool:
             "AZURE_SEARCH_CONTAINER_FIELD", "container_number"
         )
 
+        # code-only field for consignee filter- RLS
+        self._consignee_field = os.getenv(
+            "AZURE_SEARCH_CONSIGNEE_FIELD", "consignee_codes"
+        )
+        self._consignee_field_collection = os.getenv(
+            "AZURE_SEARCH_CONSIGNEE_FIELD", "consignee_codes"
+        )
+
         # IMPORTANT: should be code-only, ideally a collection field in the index
         self._consignee_field = os.getenv(
             "AZURE_SEARCH_CONSIGNEE_FIELD", "consignee_codes"
@@ -50,18 +64,24 @@ class AzureAISearchTool:
         # vector field
         self._vector_field = os.getenv("AZURE_SEARCH_VECTOR_FIELD", "text_vector")
 
-    def _build_consignee_filter(self, consignee_codes: List[str]) -> str:
+    def _consignee_filter(self, codes: List[str]) -> str:
         # Uses search.in for matching against a list.
         # For a simple STRING field: search.in(field, 'a,b', ',')
         # For a COLLECTION field, best practice is to store it as collection and filter with any().
         # We support both via env switch.
-        is_collection = os.getenv(
-            "AZURE_SEARCH_CONSIGNEE_IS_COLLECTION", "true"
-        ).lower() in ("1", "true", "yes")
+        if not codes:
+            # No scope? We fail closed.
+            return "false"
 
-        joined = ",".join(consignee_codes)
-        if is_collection:
+        joined = ",".join([c.strip() for c in codes if c and c.strip()])
+
+        # Collection field:
+        # consignee_code_ids/any(c: search.in(c, '0000866,234567', ','))
+        if self._consignee_is_collection:
             return f"{self._consignee_field}/any(c: search.in(c, '{joined}', ','))"
+
+        # Plain string field:
+        # search.in(consignee_codes, '0000866,234567', ',')
         return f"search.in({self._consignee_field}, '{joined}', ',')"
 
     def search(
@@ -74,7 +94,7 @@ class AzureAISearchTool:
         vector_k: int = 30,
         extra_filter: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        base_filter = self._build_consignee_filter(consignee_codes)
+        base_filter = self._consignee_filter(consignee_codes)
         final_filter = (
             base_filter if not extra_filter else f"({base_filter}) AND ({extra_filter})"
         )
@@ -86,13 +106,13 @@ class AzureAISearchTool:
         ]
 
         kwargs: Dict[str, Any] = {
-            "search_text": query_text,
+            "search_text": query_text or "*",
             "top": top_k,
             "filter": final_filter,
             "select": select,
         }
 
-        if vector is not None:
+        if vector is not None and vector:
             if VectorizedQuery is None:
                 raise RuntimeError(
                     "VectorizedQuery not available in your azure-search-documents version."
@@ -106,6 +126,7 @@ class AzureAISearchTool:
             ]
 
         results = self._client.search(**kwargs)
+
         out: List[Dict[str, Any]] = []
         for r in results:
             doc = dict(r)

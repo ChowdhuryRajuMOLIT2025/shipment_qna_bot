@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import os
+
+from dotenv import find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv(), override=True)
+
 from typing import List
 
 from openai import AzureOpenAI

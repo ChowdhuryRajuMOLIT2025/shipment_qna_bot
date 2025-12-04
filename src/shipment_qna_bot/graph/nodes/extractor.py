@@ -29,7 +29,7 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
     return out
 
 
-def _rank(items: List[str], confidences: float) -> Tuple[Optional[str, float]]:
+def _rank(items: List[str], confidences: float) -> List[Tuple[str, float]]:
     return [(x, confidences) for x in _dedupe_preserve_order(items)]
 
 

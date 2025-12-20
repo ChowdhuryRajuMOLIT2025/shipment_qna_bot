@@ -1,5 +1,7 @@
-from operator import add
 from typing import Annotated, Any, Dict, List, Optional, TypedDict
+
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 
 class RetrievalPlan(TypedDict):
@@ -20,6 +22,7 @@ class GraphState(TypedDict):
     # --- Input ---
     question_raw: str  # Original question
     normalized_question: Optional[str]
+    messages: Annotated[List[BaseMessage], add_messages]
 
     # --- Context ---
     conversation_id: str

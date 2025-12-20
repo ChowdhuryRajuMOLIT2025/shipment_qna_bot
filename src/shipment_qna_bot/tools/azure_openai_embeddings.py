@@ -43,11 +43,11 @@ class AzureOpenAIEmbeddingsClient:
         if not text:
             return []
         try:
-            # For newer OpenAI SDK (1.x+) and specific Azure API versions,
-            # input often expects a list of strings.
+            # Ensure input is a string, and wrap it in a list as expected by create method
+            text_input = str(text)
             resp = self._client.embeddings.create(
                 model=self._deployment,
-                input=[text],
+                input=text_input,
             )
             return list(resp.data[0].embedding)
         except Exception as e:

@@ -72,4 +72,11 @@ def run_graph(input_state: dict) -> dict:
     """
     thread_id = input_state.get("conversation_id", "default")
     config = {"configurable": {"thread_id": thread_id}}
+
+    # Convert question_raw to a message for history persistence
+    from langchain_core.messages import HumanMessage
+
+    if "messages" not in input_state:
+        input_state["messages"] = [HumanMessage(content=input_state["question_raw"])]
+
     return graph_app.invoke(input_state, config=config)

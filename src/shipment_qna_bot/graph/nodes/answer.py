@@ -94,15 +94,28 @@ d. Pagination Signal [ACTION: SHOW_MORE] (if applicable)
             f"Context:\n{context_str}\n\n" f"Question: {question}\n\n" "Answer:"
         )
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        from langchain_core.messages import AIMessage
+
+        # Build message history for OpenAI
+        # We start with system prompt, then add previous messages, then current user prompt
+        llm_messages = [{"role": "system", "content": system_prompt}]
+
+        # Add history (excluding the very last one which we'll replace with user_prompt)
+        history = state.get("messages") or []
+        for msg in history[:-1]:
+            role = "user" if msg.type == "human" else "assistant"
+            llm_messages.append({"role": role, "content": msg.content})
+
+        # Add current user prompt with context
+        llm_messages.append({"role": "user", "content": user_prompt})
 
         try:
             chat_tool = _get_chat_tool()
-            response_text = chat_tool.chat_completion(messages)
+            response_text = chat_tool.chat_completion(llm_messages)
             state["answer_text"] = response_text
+
+            # Append AI response to messages for next turn
+            state["messages"] = [AIMessage(content=response_text)]
 
             logger.info(
                 f"Generated answer: {response_text[:100]}...",

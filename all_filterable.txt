@@ -1,7 +1,0 @@
-Filterable fields in shipment-jsonl-idx:
-  - parent_id (Type: Edm.String)
-
-Filterable fields in shipment-knowledgesource-index:
-  - snippet_parent_id (Type: Edm.String)
-  - blob_url (Type: Edm.String)
-

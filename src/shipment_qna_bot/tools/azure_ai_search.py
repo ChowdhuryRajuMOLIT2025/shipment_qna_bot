@@ -174,3 +174,28 @@ class AzureAISearchTool:
                 )
         except Exception as e:
             raise RuntimeError(f"Error uploading documents: {str(e)}")
+
+    def clear_index(self) -> None:
+        """
+        Deletes ALL documents from the index. Use with caution.
+        """
+        try:
+            # Azure Search doesn't have a simple "delete all", so we fetch all keys and delete.
+            # However, for RAG scenarios, sometimes it's easier to just delete and recreate the index,
+            # but here we'll try to delete docs by key if they exist.
+            # A more efficient way for large indexes is checking the count and batching.
+            results = self._client.search(
+                search_text="*", select=[self._id_field], top=1000
+            )
+            keys_to_delete = [
+                {"@search.action": "delete", self._id_field: r[self._id_field]}
+                for r in results
+            ]
+
+            if keys_to_delete:
+                self._client.upload_documents(documents=keys_to_delete)
+                print(f"Deleted {len(keys_to_delete)} documents from index.")
+            else:
+                print("Index already empty.")
+        except Exception as e:
+            print(f"Warning during clear_index: {e}")

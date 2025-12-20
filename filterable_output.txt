@@ -1,2 +1,0 @@
-Filterable fields in shipment-jsonl-idx:
-- parent_id (Type: Edm.String)

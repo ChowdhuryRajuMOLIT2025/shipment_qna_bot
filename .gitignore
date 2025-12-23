@@ -17,3 +17,5 @@ uv.lock.backup
 /.vscode/
 *.jsonl
 *.md
+docs/
+data/

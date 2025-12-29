@@ -147,7 +147,10 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                         )
 
                 # Second pass: Get final answer with tool result
-                response = chat.chat_completion(messages, temperature=0.0)
+                # Force the model to generate text (the plan) instead of calling tools again
+                response = chat.chat_completion(
+                    messages, temperature=0.0, tool_choice="none"
+                )
 
             res = response["content"]
             usage = response["usage"]

@@ -258,5 +258,3 @@ Later your .NET app will do the same: call the FastAPI service.
 * It keeps on the critical path: **RLS + retrieval + deterministic answers**.
 
 ---
-
-If you want the next step, we should implement **memory/** first (store + memory_in/out nodes) because it touches minimal code and immediately improves UX without risking hallucination.

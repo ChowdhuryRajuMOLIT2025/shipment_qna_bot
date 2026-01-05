@@ -20,14 +20,21 @@ def intent_node(state: GraphState) -> GraphState:
     if not text:
         return {"intent": "end"}
 
+    import json
+    import re
+
     system_prompt = (
-        "You are an intent classifier for a Shipment Q&A Bot. "
-        "Classify the user's question into ONE of these categories: "
-        "- 'retrieval': Questions about container status, ETA, delays, or specific shipment details. "
-        "- 'analytics': Questions asking for summaries, charts, table aggregations, or cross-shipment insights. "
-        "- 'greeting': Just saying hello, hi, or general non-shipment small talk. "
-        "- 'end': Gibberish or completely irrelevant topics. "
-        "Output ONLY the category name in lowercase."
+        "You are an intent classifier for a Shipment Q&A Bot.\n"
+        "Analyze the user's input and extract:\n"
+        "1. Primary Intent: One of ['retrieval', 'analytics', 'greeting', 'end'].\n"
+        "2. All Intents: A list of all applicable intents (e.g. ['retrieval', 'complaint']).\n"
+        "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"
+        "Output JSON ONLY:\n"
+        "{\n"
+        '  "primary_intent": "retrieval",\n'
+        '  "intents": ["retrieval"],\n'
+        '  "sentiment": "neutral"\n'
+        "}"
     )
 
     messages = [
@@ -38,7 +45,7 @@ def intent_node(state: GraphState) -> GraphState:
     try:
         chat_tool = _get_chat_tool()
         response = chat_tool.chat_completion(messages, temperature=0.0)
-        intent = response["content"].strip().lower()
+        content = response["content"].strip()
         usage = response["usage"]
 
         # Accumulate usage
@@ -50,16 +57,38 @@ def intent_node(state: GraphState) -> GraphState:
         for k in usage:
             usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
 
-        # Valid intents: retrieval, analytics, greeting, end
+        # Parse JSON
+        try:
+            # simple cleanup for markdown code blocks if LLM adds them
+            clean_content = re.sub(r"```json|```", "", content).strip()
+            data = json.loads(clean_content)
+            intent = data.get("primary_intent", "retrieval").lower()
+            sub_intents = data.get("intents", [])
+            sentiment = data.get("sentiment", "neutral").lower()
+        except json.JSONDecodeError:
+            logger.warning(f"Intent classification JSON parse failed. Raw: {content}")
+            intent = "retrieval"
+            sub_intents = ["retrieval"]
+            sentiment = "neutral"
+
+        # Valid intents check
         valid_intents = ["retrieval", "analytics", "greeting", "end"]
         if intent not in valid_intents:
             intent = "retrieval"
+
     except Exception as e:
         logger.error(f"Intent classification failed: {e}")
         intent = "retrieval"
+        sub_intents = ["retrieval"]
+        sentiment = "neutral"
         usage_metadata = state.get("usage_metadata")
 
-    return {"intent": intent, "usage_metadata": usage_metadata}
+    return {
+        "intent": intent,
+        "sub_intents": sub_intents,
+        "sentiment": sentiment,
+        "usage_metadata": usage_metadata,
+    }
 
     logger.info(
         f"Classified intent: {intent}",

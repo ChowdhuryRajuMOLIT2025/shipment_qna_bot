@@ -49,25 +49,44 @@ class AzureOpenAIChatTool:
         messages: List[Dict[str, str]],
         temperature: float = 0.0,
         max_tokens: int = 800,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generates a chat completion using the Azure OpenAI client.
-        Returns a dict with 'content' and 'usage'.
+        Returns a dict with 'content', 'usage', and optionally 'tool_calls'.
         """
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            return {
-                "content": response.choices[0].message.content or "",
+            kwargs = {
+                "model": self.deployment_name,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if tools:
+                kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
+
+            response = self.client.chat.completions.create(**kwargs)
+            choice = response.choices[0]
+            message = choice.message
+
+            result = {
+                "content": message.content or "",
                 "usage": {
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens,
                     "total_tokens": response.usage.total_tokens,
                 },
             }
+
+            if message.tool_calls:
+                result["tool_calls"] = message.tool_calls
+                # Store the tool_call_id of the first call for convenience if needed,
+                # though usually we iterate over tool_calls.
+                result["tool_call_id"] = message.tool_calls[0].id
+
+            return result
         except Exception as e:
             raise RuntimeError(f"Azure OpenAI Chat Completion failed: {e}")

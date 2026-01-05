@@ -11,6 +11,8 @@ class RetrievalPlan(TypedDict):
     vector_k: int
     extra_filter: Optional[str]
     include_total_count: Optional[bool]
+    skip: Optional[int]
+    order_by: Optional[str]
     reason: str
     hybrid_weights: Optional[Dict[str, float]]
 
@@ -33,12 +35,15 @@ class GraphState(TypedDict):
     # --- Extraction ---
     # We use 'add' reducer to accumulate entities if multiple nodes find them (though usually just one extractor)
     # For now, simple overwrite is fine, but 'add' is safer for lists.
-    extracted_ids: Dict[str, List[str]]  # e.g. {'container': ['ABCD123'], 'po': []}
+    extracted_ids: Dict[
+        str, List[str]
+    ]  # e.g. {'container': ['ABCD123'], 'po': [], 'obl': []}
     time_window_days: Optional[int]
 
     # --- Intent ---
     intent: Optional[str]
     sub_intents: List[str]
+    sentiment: Optional[str]  # e.g., "positive", "neutral", "negative"
 
     # --- Retrieval ---
     retrieval_plan: Optional[RetrievalPlan]

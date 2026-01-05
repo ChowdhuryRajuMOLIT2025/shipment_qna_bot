@@ -1,0 +1,27 @@
+[
+  {
+    "question": "What is the date today?",
+    "plan": {
+      "query_text": "*",
+      "top_k": 0,
+      "vector_k": 10,
+      "extra_filter": null,
+      "include_total_count": true,
+      "reason": "analytics intent"
+    },
+    "answer": "a. Direct Answer / Summary  \nThe date today is 29-Dec-25.  \n\nb. Data Table  \nNot applicable.  \n\nc. Pagination Button  \nNot applicable.  "
+  },
+  {
+    "question": "Show me shipments arriving today",
+    "plan": {
+      "query_text": "29-dec-25",
+      "top_k": 10,
+      "vector_k": 30,
+      "extra_filter": "optimal_eta_fd_date ge 2025-12-29T00:00:00Z and optimal_eta_fd_date lt 2025-12-30T00:00:00Z",
+      "skip": 0,
+      "order_by": "optimal_eta_fd_date desc",
+      "reason": "The user requested shipments arriving on 29-Dec-2025, so the filter is applied to match the optimal_eta_fd_date for that specific day."
+    },
+    "answer": "a. Direct Answer / Summary  \nThere is 1 shipment with an ETA FD of today, 29-Dec-25.  \n\nb. Data Table  \n| Container   | PO Numbers                                                                                     | Discharge Port         | Arrival Date (ETA/ATA) |\n|-------------|-----------------------------------------------------------------------------------------------|------------------------|-------------------------|\n| TRHU7833950 | ['5302944242', '5302944242', '5302944243', '5302944244', '5302944251', '5302944252', '5302944265', '5302944266', '5302944267', '5302944341', '5302944342', '5302944352', '5302944608', '5302944609', '5302944648', '5302944745', '5302944746', '5302944747', '5302947458', '5302948497', '5302954680', '5302954681', '5302954682', '5302954683', '5302954684', '5302954685', '5302954686', '5302954687', '5302954688', '5302954690', '5302954691', '5302954692', '5302954693'] | ROTTERDAM, NL(NLRTM) | 29-Dec-25 (ETA)        |\n\nc. Pagination Button  \nNot applicable.  "
+  }
+]

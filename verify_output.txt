@@ -1,0 +1,8 @@
+
+--- Testing Question: Show me shipments arriving today ---
+Retrieval Plan: {'query_text': 'show me shipments arriving today', 'top_k': 10, 'vector_k': 30, 'extra_filter': None, 'skip': None, 'order_by': None, 'reason': 'fallback'}
+Retry Count: 0
+
+--- Testing Question: What is today's date? ---
+Retrieval Plan: {'query_text': "what is today's date for the shipments arriving today?", 'top_k': 10, 'vector_k': 30, 'extra_filter': None, 'skip': None, 'order_by': None, 'reason': 'fallback'}
+Retry Count: 0

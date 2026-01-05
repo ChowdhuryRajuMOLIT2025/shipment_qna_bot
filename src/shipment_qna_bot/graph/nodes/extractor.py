@@ -21,23 +21,33 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     text = state.get("normalized_question") or state.get("question_raw") or ""
 
-    # 1. Regex handles high-confidence ID extraction
+    # 1. Regex handles high-confidence ID formats
+    # Container: 4 letters + 7 digits
     container_pattern = r"\b[a-zA-Z]{4}\d{7}\b"
-    po_pattern = r"\b(?:PO)?(\d{10})\b"
-    # Booking numbers usually start with 2-3 letters + 7-10 digits, or just 10 digits
-    booking_pattern = r"\b(?:[a-zA-Z]{2,3})?\d{7,10}\b"
+    # PO: Alphanumeric, but usually has at least some numbers or specific separators.
+    # Narrowing to avoid matching common 5-15 char words like 'WHERE'.
+    # Typically POs have a mix of letters and numbers or start with specific prefixes.
+    po_pattern = r"\b(?:PO\s*|#)?([a-zA-Z0-9]*\d+[a-zA-Z0-9]*)\b"
+    # OBL: Usually carrier code (4 chars) + alphanumeric string.
+    obl_pattern = r"\b(?:MAEU|MSCU|SGPV|KKFU|COSU)[a-zA-Z0-9]{8,15}\b"
+    # Booking: Often similar to OBL but sometimes just 7+ digits.
+    booking_pattern = r"\b(?:[a-zA-Z]{2,4}\d{7,10})\b"
 
     containers = [c.upper() for c in re.findall(container_pattern, text)]
-    pos = [p for p in re.findall(po_pattern, text, re.IGNORECASE)]
+    pos = [
+        p.upper() for p in re.findall(po_pattern, text, re.IGNORECASE) if len(p) >= 5
+    ]
+    obls = [o.upper() for o in re.findall(obl_pattern, text, re.IGNORECASE)]
+    bookings = [b.upper() for b in re.findall(booking_pattern, text, re.IGNORECASE)]
 
     # 2. LLM handles ambiguous entities (Locations, Dates, Carriers, and validating regex results)
     system_prompt = """
     Extract logistics entities from the user's question. 
     Return a JSON object with keys: 
-    - "container": list of container IDs (e.g. SEGU5935510)
-    - "po": list of PO numbers (10 digits)
-    - "booking": list of booking numbers (e.g. TH2017996)
-    - "obl": list of Ocean Bill of Lading numbers
+    - "container_number": list of container IDs (e.g. SEGU5935510)
+    - "po_numbers": list of PO numbers (e.g. 5302997239)
+    - "booking_numbers": list of booking numbers (e.g. TH2017996)
+    - "obl_nos": list of Ocean Bill of Lading numbers
     - "location": list of cities or ports (e.g. "Los Angeles", "CNSHA")
     - "carrier": list of shipping lines (e.g. "Maersk", "MSC")
     - "date_range": e.g. "Oct", "November 25", "December"
@@ -77,11 +87,32 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.warning(f"LLM Extraction failed: {e}. Falling back to regex.")
 
     # Merge results
+    # Merge results and normalize to UPPERCASE for ID fields
     merged = {
-        "container": list(set(containers + (llm_extracted.get("container") or []))),
-        "po": list(set(pos + (llm_extracted.get("po") or []))),
-        "booking": llm_extracted.get("booking") or [],
-        "obl": llm_extracted.get("obl") or [],
+        "container_number": list(
+            set(
+                [
+                    x.upper()
+                    for x in (
+                        containers + (llm_extracted.get("container_number") or [])
+                    )
+                ]
+            )
+        ),
+        "po_numbers": list(
+            set([x.upper() for x in (pos + (llm_extracted.get("po_numbers") or []))])
+        ),
+        "booking_numbers": list(
+            set(
+                [
+                    x.upper()
+                    for x in (bookings + (llm_extracted.get("booking_numbers") or []))
+                ]
+            )
+        ),
+        "obl_nos": list(
+            set([x.upper() for x in (obls + (llm_extracted.get("obl_nos") or []))])
+        ),
         "location": llm_extracted.get("location") or [],
         "carrier": llm_extracted.get("carrier") or [],
         "date_range": llm_extracted.get("date_range") or [],

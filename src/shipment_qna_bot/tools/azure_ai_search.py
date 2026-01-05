@@ -14,6 +14,8 @@ from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 
+from shipment_qna_bot.security.rls import build_search_filter
+
 # from openai import AzureOpenAI
 
 try:
@@ -26,6 +28,7 @@ class AzureAISearchTool:
     """
     Hybrid search = BM25 keyword(semantic search) + vector query.
     ALWAYS applies consignee filter (RLS).
+    NEVER show consignee_code_ids in the response.
     """
 
     def __init__(self) -> None:
@@ -47,9 +50,12 @@ class AzureAISearchTool:
         )
 
         # configured field names in az-index
-        self._id_field = os.getenv("AZURE_SEARCH_ID_FIELD", "chunk_id")
+        self._id_field = os.getenv("AZURE_SEARCH_ID_FIELD", "document_id")
         self._content_field = os.getenv("AZURE_SEARCH_CONTENT_FIELD", "chunk")
-        self._container_field = os.getenv("AZURE_SEARCH_CONTAINER_FIELD", "metadata")
+        self._container_field = os.getenv(
+            "AZURE_SEARCH_CONTAINER_FIELD", "container_number"
+        )
+        self._metadata_field = os.getenv("AZURE_SEARCH_METADATA_FIELD", "metadata_json")
 
         # code-only field for consignee filter- RLS
         self._consignee_field = os.getenv(
@@ -71,15 +77,21 @@ class AzureAISearchTool:
             # No scope? We fail closed.
             return "false"
 
-        joined = ",".join([c.strip() for c in codes if c and c.strip()])
+        clean_codes = [c.strip() for c in codes if c and c.strip()]
+        if not clean_codes:
+            return "false"
 
         # Collection field:
         # consignee_code_ids/any(c: search.in(c, '0000866,234567', ','))
         if self._consignee_is_collection:
-            return f"{self._consignee_field}/any(c: search.in(c, '{joined}', ','))"
+            return build_search_filter(
+                allowed_codes=clean_codes, field_name=self._consignee_field
+            )
 
-        # Plain string field:
-        # search.in(consignee_codes, '0000866,234567', ',')
+        # Legacy: plain string field (e.g., `consignee_codes` as a single string)
+        # Escaping single quotes to keep OData happy
+        safe_codes = [c.replace("'", "''") for c in clean_codes]
+        joined = ",".join(safe_codes)
         return f"search.in({self._consignee_field}, '{joined}', ',')"
 
     def search(
@@ -93,7 +105,17 @@ class AzureAISearchTool:
         extra_filter: Optional[str] = None,
         include_total_count: bool = False,
         facets: Optional[List[str]] = None,
+        skip: Optional[int] = None,
+        order_by: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """
+        Hybrid search entry point.
+
+        NOTE:
+        - `consignee_codes` MUST be the already-authorized scope (effective scope).
+          Never pass raw payload values here. The API layer is responsible for using
+          `resolve_allowed_scope` and only forwarding the allowed list.
+        """
         base_filter = self._consignee_filter(consignee_codes)
         final_filter = (
             base_filter if not extra_filter else f"({base_filter}) and ({extra_filter})"
@@ -110,8 +132,8 @@ class AzureAISearchTool:
             "top": top_k,
             "filter": final_filter,
             "select": None,  # Retrieve all retrievable fields
-            "include_total_count": include_total_count,
-            "facets": facets,
+            "skip": skip,
+            "order_by": order_by,
         }
 
         if vector is not None and vector:
@@ -133,11 +155,20 @@ class AzureAISearchTool:
         for r in results:
             doc = dict(r)
 
-            # Extract flattened values for easy access, but keep full doc
-            container_number = doc.get("container_number")
+            # Extract key fields using configured names
+            container_number = doc.get(self._container_field)
             if not container_number:
-                raw_meta = doc.get(self._container_field)
-                if isinstance(raw_meta, dict):
+                # Fallback check inside metadata_json if top-level missing
+                raw_meta = doc.get(self._metadata_field)
+                if isinstance(raw_meta, str):
+                    try:
+                        import json
+
+                        meta_dict = json.loads(raw_meta)
+                        container_number = meta_dict.get("container_number")
+                    except:
+                        pass
+                elif isinstance(raw_meta, dict):
                     container_number = raw_meta.get("container_number")
 
             hit = {

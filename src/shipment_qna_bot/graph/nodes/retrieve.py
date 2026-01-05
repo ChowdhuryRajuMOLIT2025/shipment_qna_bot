@@ -40,6 +40,8 @@ def _get_embedder() -> AzureOpenAIEmbeddingsClient:
 def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Fetch docs from vectorDB for top k, filters, hybrid weights, etc.
+    This node assumes `state['consignee_codes']` is already an *effective*,
+    authorized scope. It must NEVER receive raw payload values.
     """
     _sync_ctx(state)
 
@@ -89,6 +91,8 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 vector_k=int(plan.get("vector_k", 30)),
                 extra_filter=extra_filter,
                 include_total_count=plan.get("include_total_count", False),
+                skip=plan.get("skip"),
+                order_by=plan.get("order_by"),
             )
             hits = search_response["hits"]
             state["hits"] = hits
@@ -101,12 +105,49 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 extra={"step": "NODE:Retriever"},
             )
         except Exception as e:
+            error_msg = str(e)
+            if extra_filter and (
+                "Invalid expression" in error_msg or "search.in" in error_msg
+            ):
+                logger.warning(
+                    f"Search failed with invalid filter '{extra_filter}'. Retrying without filter.",
+                    extra={"step": "NODE:Retriever"},
+                )
+                try:
+                    search_response = tool.search(
+                        query_text=query_text or "*",
+                        consignee_codes=consignee_codes,
+                        top_k=int(plan.get("top_k", 8)),
+                        vector=vector,
+                        vector_k=int(plan.get("vector_k", 30)),
+                        extra_filter=None,  # Retry without the bad filter
+                        include_total_count=plan.get("include_total_count", False),
+                        skip=plan.get("skip"),
+                        order_by=plan.get("order_by"),
+                    )
+                    hits = search_response["hits"]
+                    state["hits"] = hits
+                    state["idx_analytics"] = {
+                        "count": search_response.get("count"),
+                        "facets": search_response.get("facets"),
+                    }
+                    logger.info(
+                        f"Retrieved {len(hits)} hits (fallback) for query=<{query_text}>",
+                        extra={"step": "NODE:Retriever"},
+                    )
+                    return state
+                except Exception as retry_e:
+                    logger.error(f"Fallback search also failed: {retry_e}")
+
             state.setdefault("errors", []).append(
                 f"Search failed: {type(e).__name__}: {e}"
             )
             state["hits"] = []
+            state.setdefault("notices", []).append(
+                f"Note: Search encountered a temporary issue ({type(e).__name__}). Some data might be missing."
+            )
             logger.exception(
-                f"Search failed; falling back to keyword-only. err={e}",
+                f"Search failed completely. err={e}",
                 extra={"step": "NODE:Retriever"},
             )
 

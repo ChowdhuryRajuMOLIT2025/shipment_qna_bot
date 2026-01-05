@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Any, Dict
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
@@ -56,6 +57,9 @@ Retrieved Documents:
 User Question:
 {question}
 
+Today's UTC Date:
+{today}
+
 Drafted Answer:
 {answer}
 
@@ -75,8 +79,9 @@ Output MUST be a JSON object:
 }}
 """.strip()
 
+        today_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
         context_str = ""
-        for i, hit in enumerate(hits[:5]):
+        for i, hit in enumerate(hits[:10]):
             context_str += f"\n--- Doc {i+1} ---\n{json.dumps(hit, indent=2)}\n"
 
         user_prompt = "Judge the answer now."
@@ -85,7 +90,10 @@ Output MUST be a JSON object:
             {
                 "role": "system",
                 "content": system_prompt.format(
-                    context=context_str, question=question, answer=answer
+                    context=context_str,
+                    question=question,
+                    answer=answer,
+                    today=today_str,
                 ),
             },
             {"role": "user", "content": user_prompt},

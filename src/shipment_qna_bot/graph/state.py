@@ -32,6 +32,8 @@ class GraphState(TypedDict):
     conversation_id: str
     trace_id: str
     consignee_codes: List[str]  # aligned with nodes
+    today_date: Optional[str]
+    now_utc: Optional[str]
 
     # --- Extraction ---
     # We use 'add' reducer to accumulate entities if multiple nodes find them (though usually just one extractor)

@@ -12,9 +12,11 @@ def route_node(state: GraphState) -> Literal["retrieval", "analytics", "end"]:
 
     if intent == "analytics":
         return "analytics"
-    elif intent in ["retrieval", "greeting", "status", "eta", "delay"]:
+    elif intent in ["retrieval", "status", "eta", "delay"]:
         # We group status/eta/delay under retrieval for backward compatibility if needed,
         # but LLM now primarily outputs 'retrieval' or 'greeting'.
         return "retrieval"
+    elif intent == "greeting":
+        return "end"
     else:
         return "end"

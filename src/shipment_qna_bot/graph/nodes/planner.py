@@ -159,6 +159,14 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     return None
             return 0
 
+        def _wants_bucket_chart(text: str) -> bool:
+            lowered = text.lower()
+            bucket_words = ["bucket", "breakdown", "group", "chart", "graph"]
+            window_words = ["today", "week", "fortnight", "month"]
+            return any(w in lowered for w in bucket_words) and any(
+                w in lowered for w in window_words
+            )
+
         # Booster: if we have specific IDs, make sure they are in query_text
         all_ids = []
         for k in ["container_number", "po_numbers", "booking_numbers", "obl_nos"]:
@@ -253,6 +261,12 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         if post_filter:
             plan["post_filter"] = post_filter
+
+        if _wants_bucket_chart(q):
+            plan["include_total_count"] = True
+            plan["top_k"] = max(plan.get("top_k", 20), 500)
+            if not plan.get("query_text") or plan["query_text"] == q:
+                plan["query_text"] = "*"
 
         state["retrieval_plan"] = plan
         logger.info(f"Planned retrieval: {plan}")

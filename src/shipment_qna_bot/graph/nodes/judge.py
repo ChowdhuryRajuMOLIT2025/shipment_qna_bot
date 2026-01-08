@@ -1,10 +1,10 @@
 import json
-from datetime import datetime
 from typing import Any, Dict
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.tools.date_tools import get_today_date
 
 _CHAT_TOOL = None
 
@@ -79,7 +79,7 @@ Output MUST be a JSON object:
 }}
 """.strip()
 
-        today_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        today_str = state.get("today_date") or get_today_date()
         context_str = ""
         for i, hit in enumerate(hits[:10]):
             context_str += f"\n--- Doc {i+1} ---\n{json.dumps(hit, indent=2)}\n"

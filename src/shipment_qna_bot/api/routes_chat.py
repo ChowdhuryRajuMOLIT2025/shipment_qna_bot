@@ -54,8 +54,8 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
 
     # Make the effective scope visible to middleware logging.
     # This is what we actually use for tools/RLS, not the raw payload.
-    # Raw codes from payload are already normalized by ChatRequest validator.
-    request.state.consignee_codes = payload.consignee_codes
+    # Use effective scope for logging/middleware (never raw payload codes).
+    request.state.consignee_codes = allowed_consignee_codes
 
     logger.info(
         "Normalized consignee_codes from payload=%s -> allowed_scope=%s",

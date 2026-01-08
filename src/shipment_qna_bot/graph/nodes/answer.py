@@ -1,10 +1,12 @@
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.tools.date_tools import get_today_date
 
 _chat_tool: Optional[AzureOpenAIChatTool] = None
 
@@ -36,6 +38,131 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
         hits = cast(List[Dict[str, Any]], state.get("hits") or [])
         analytics = cast(Dict[str, Any], state.get("idx_analytics") or {})
         question = state.get("question_raw") or ""
+
+        def _parse_dt(val: Any) -> Optional[datetime]:
+            if not val or val == "NaT":
+                return None
+            try:
+                s = str(val).replace("Z", "+00:00")
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except Exception:
+                return None
+
+        def _mentions_final_destination(text: str) -> bool:
+            lowered = text.lower()
+            if "final destination" in lowered or "final_destination" in lowered:
+                return True
+            if "distribution center" in lowered or "distribution centre" in lowered:
+                return True
+            if re.search(r"\bin-?dc\b", lowered):
+                return True
+            if re.search(r"\bfd\b", lowered):
+                return True
+            return False
+
+        def _wants_bucket_chart(text: str) -> bool:
+            lowered = text.lower()
+            bucket_words = ["bucket", "breakdown", "group", "chart", "graph"]
+            window_words = ["today", "week", "fortnight", "month"]
+            return any(w in lowered for w in bucket_words) and any(
+                w in lowered for w in window_words
+            )
+
+        def _get_now_utc() -> datetime:
+            raw = state.get("now_utc")
+            if raw:
+                try:
+                    s = str(raw).replace("Z", "+00:00")
+                    dt = datetime.fromisoformat(s)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.astimezone(timezone.utc)
+                except Exception:
+                    pass
+            return datetime.now(timezone.utc)
+
+        def _bucket_counts(hits_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+            now = _get_now_utc()
+            windows = [
+                ("today", 1),
+                ("this_week", 7),
+                ("this_fortnight", 14),
+                ("this_month", 30),
+            ]
+            only_hot = "hot" in question.lower() and "normal" not in question.lower()
+            only_normal = "normal" in question.lower() and "hot" not in question.lower()
+            categories = ["hot", "normal"]
+            if only_hot:
+                categories = ["hot"]
+            elif only_normal:
+                categories = ["normal"]
+
+            def _is_hot(hit: Dict[str, Any]) -> bool:
+                val = hit.get("hot_container_flag")
+                if val is None and isinstance(hit.get("metadata_json"), str):
+                    try:
+                        meta = json.loads(str(hit["metadata_json"]))
+                        val = meta.get("hot_container_flag")
+                    except Exception:
+                        val = None
+                return bool(val)
+
+            def _arrival_dt(hit: Dict[str, Any]) -> Optional[datetime]:
+                if _mentions_final_destination(question):
+                    return _parse_dt(
+                        hit.get("optimal_eta_fd_date") or hit.get("eta_fd_date")
+                    )
+                return _parse_dt(
+                    hit.get("optimal_ata_dp_date")
+                    or hit.get("eta_dp_date")
+                    or hit.get("ata_dp_date")
+                )
+
+            rows: List[Dict[str, Any]] = []
+            chart_rows: List[Dict[str, Any]] = []
+
+            for label, days in windows:
+                bucket_end = now + timedelta(days=days)
+                for category in categories:
+                    count = 0
+                    for h in hits_list:
+                        dt = _arrival_dt(h)
+                        if not dt:
+                            continue
+                        if not (now <= dt < bucket_end):
+                            continue
+                        is_hot = _is_hot(h)
+                        if category == "hot" and not is_hot:
+                            continue
+                        if category == "normal" and is_hot:
+                            continue
+                        count += 1
+                    chart_rows.append(
+                        {"bucket": label, "category": category, "count": count}
+                    )
+
+                totals = {"bucket": label}
+                if "hot" in categories:
+                    totals["hot_count"] = next(
+                        r["count"]
+                        for r in chart_rows
+                        if r["bucket"] == label and r["category"] == "hot"
+                    )
+                if "normal" in categories:
+                    totals["normal_count"] = next(
+                        r["count"]
+                        for r in chart_rows
+                        if r["bucket"] == label and r["category"] == "normal"
+                    )
+                totals["total_count"] = sum(
+                    r["count"] for r in chart_rows if r["bucket"] == label
+                )
+                rows.append(totals)
+
+            return {"rows": rows, "chart_rows": chart_rows, "categories": categories}
 
         # Context construction
         context_str = ""
@@ -108,7 +235,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             context_str += f"\nNOTE: {pagination_hint}\n"
 
         # 3. Add Current Date Context
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = state.get("today_date") or get_today_date()
         context_str += (
             f"\n--- System Information ---\nCurrent Date (UTC): {today_str}\n"
         )
@@ -163,6 +290,31 @@ a. Direct Answer / Summary
 b. Data Table (if applicable)
 c. Pagination Button (if applicable)
 """.strip()
+
+        if hits and _wants_bucket_chart(question):
+            bucket_spec = _bucket_counts(hits)
+            if bucket_spec.get("rows"):
+                context_str += (
+                    "\n--- Analytics Buckets ---\n"
+                    + json.dumps(bucket_spec["rows"], indent=2)
+                    + "\n"
+                )
+
+                chart_title = "Discharge Port Arrival Buckets (Hot vs Normal)"
+                if _mentions_final_destination(question):
+                    chart_title = "Final Destination Arrival Buckets (Hot vs Normal)"
+
+                state["table_spec"] = {
+                    "columns": list(bucket_spec["rows"][0].keys()),
+                    "rows": bucket_spec["rows"],
+                    "title": "Arrival Buckets",
+                }
+                state["chart_spec"] = {
+                    "kind": "bar",
+                    "title": chart_title,
+                    "data": bucket_spec["chart_rows"],
+                    "encodings": {"x": "bucket", "y": "count", "color": "category"},
+                }
 
         user_prompt = (
             f"Context:\n{context_str}\n\n" f"Question: {question}\n\n" "Answer:"
@@ -241,7 +393,7 @@ c. Pagination Button (if applicable)
             state["answer_text"] = response_text
 
             # --- Structured Table Construction ---
-            if hits and len(hits) > 1:
+            if hits and len(hits) > 1 and not state.get("table_spec"):
                 cols = [
                     "container_number",
                     "shipment_status",

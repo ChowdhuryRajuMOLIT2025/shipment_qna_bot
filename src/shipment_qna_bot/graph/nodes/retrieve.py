@@ -176,6 +176,21 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
             except Exception:
                 return None
 
+        def _get_now_utc() -> datetime:
+            raw = state.get("now_utc")
+            if raw:
+                try:
+                    s = str(raw).replace("Z", "+00:00")
+                    dt = datetime.fromisoformat(s)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.astimezone(timezone.utc)
+                except Exception:
+                    pass
+            return datetime.now(timezone.utc)
+
+        now_utc = _get_now_utc()
+
         def _load_metadata(hit: Dict[str, Any]) -> Dict[str, Any]:
             raw = hit.get("metadata_json")
             if isinstance(raw, dict):
@@ -210,7 +225,6 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
             if not post_filter:
                 return hits
             filtered = []
-            now = datetime.now(timezone.utc)
             for h in hits:
                 _hydrate_hit(h)
                 meta = _load_metadata(h)
@@ -230,7 +244,9 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     if not dt_val:
                         ok = False
                     elif direction == "next":
-                        ok = dt_val >= now and dt_val < (now + timedelta(days=days))
+                        ok = dt_val >= now_utc and dt_val < (
+                            now_utc + timedelta(days=days)
+                        )
 
                 delay_rule = post_filter.get("delay")
                 if ok and delay_rule:

@@ -1,3 +1,5 @@
+from langchain_core.messages import AIMessage
+
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
@@ -89,9 +91,20 @@ def intent_node(state: GraphState) -> GraphState:
         extra={"extra_data": {"text_snippet": text[:50]}},
     )
 
-    return {
+    result = {
         "intent": intent,
         "sub_intents": sub_intents,
         "sentiment": sentiment,
         "usage_metadata": usage_metadata,
     }
+
+    if intent == "greeting":
+        greeting_text = (
+            "Hello! I can help with shipment status, ETA, delays, or analytics. "
+            "What would you like to check?"
+        )
+        result["answer_text"] = greeting_text
+        result["messages"] = [AIMessage(content=greeting_text)]
+        result["is_satisfied"] = True
+
+    return result

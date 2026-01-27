@@ -18,6 +18,10 @@ uv.lock.backup
 *.jsonl
 *.md
 docs/
+!README.md
+!docs/
+!docs/overview_info.md
+!docs/.gitkeep
 data/
 data/final_verify_output.txt
 logs_debug.txt

@@ -102,6 +102,10 @@ ANALYTICS_METADATA = {
         "desc": "Actual Time of Departure from Load Port.",
         "type": "datetime"
     },
+    "etd_lp_date": {
+        "desc": "Estimated Time of Departure from Load Port.",
+        "type": "datetime"
+    },
     "booking_numbers": {
         "desc": "Internal shipment booking identifiers.",
         "type": "list"
@@ -134,5 +138,9 @@ COLUMN_SYNONYMS = {
     "destination_eta": "optimal_eta_fd_date",
     "delay": "dp_delayed_dur",
     "delivery_delay": "fd_delayed_dur",
-    "departure": "atd_lp_date",
+    "departure": "etd_lp_date",
+    "actual_departure": "atd_lp_date",
+    "estimated_departure": "etd_lp_date",
+    "etd": "etd_lp_date",
+    "atd": "atd_lp_date",
 }

@@ -53,6 +53,10 @@ _FILTER_FIELDS = {
     "job_type",
     "mcs_hbl",
     "transport_mode",
+    "dp_delayed_dur",
+    "fd_delayed_dur",
+    "delayed_dp",
+    "delayed_fd",
 }
 
 

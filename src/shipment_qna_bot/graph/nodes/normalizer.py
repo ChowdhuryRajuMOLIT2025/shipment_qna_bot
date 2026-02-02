@@ -40,8 +40,10 @@ Task:
 Given a conversation history and a final follow-up question, rewrite the follow-up question to be a standalone question that includes all necessary context (like container numbers, PO numbers, etc.) mentioned previously.
 
 Guidelines:
-- If the question is already standalone, return it as is.
+- If the question is already standalone or starts a new topic, return it as is.
 - If the question uses pronouns like "it", "they", "that shipment", replace them with the specific identifiers from the history.
+- **TOPIC SHIFT:** If the user asks a broad question (e.g., "How many total shipments?") after specific questions about a container, do NOT inject the specific container ID into the broad question unless explicitly linked (e.g., "What about its weight?").
+- **INDEPENDENCE:** Treat general analytics queries (counts, sums) as independent unless they clearly refer to the previous results.
 - Maintain the original intent of the question.
 - Return ONLY the rewritten question text.
 """.strip()

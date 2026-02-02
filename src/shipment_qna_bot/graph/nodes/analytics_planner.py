@@ -97,6 +97,9 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 You are a Pandas Data Analyst. You have access to a DataFrame `df` containing shipment data.
 Your goal is to write Python code to answer the user's question using `df`.
 
+## Context
+Today's Date: {state.get('today_date')}
+
 ## Key Column Reference
 {col_ref}
 
@@ -145,6 +148,16 @@ df_filtered = df[df['dp_delayed_dur'] > 5].copy()
 # Apply date formatting
 df_filtered['eta_dp_date'] = df_filtered['eta_dp_date'].dt.strftime('%d-%b-%Y')
 df_filtered['optimal_ata_dp_date'] = df_filtered['optimal_ata_dp_date'].dt.strftime('%d-%b-%Y')
+result = df_filtered[cols]
+```
+
+User: "List shipments departing next week."
+Code:
+```python
+# Use etd_lp_date for estimated departures
+cols = ['container_number', 'etd_lp_date', 'load_port']
+df_filtered = df[df['etd_lp_date'].dt.isocalendar().week == (today_week + 1)].copy()
+df_filtered['etd_lp_date'] = df_filtered['etd_lp_date'].dt.strftime('%d-%b-%Y')
 result = df_filtered[cols]
 ```
 """

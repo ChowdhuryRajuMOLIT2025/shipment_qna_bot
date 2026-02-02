@@ -4,6 +4,8 @@ from typing import Any, Dict, List, Optional
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
+from shipment_qna_bot.tools.analytics_metadata import (ANALYTICS_METADATA,
+                                                       INTERNAL_COLUMNS)
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.pandas_engine import PandasAnalyticsEngine
@@ -85,9 +87,18 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         head_sample = df.head(3).to_markdown(index=False)
         shape_info = f"Rows: {df.shape[0]}, Columns: {df.shape[1]}"
 
+        # Dynamic Column Reference
+        col_ref = ""
+        for k, v in ANALYTICS_METADATA.items():
+            if k in columns:
+                col_ref += f"- `{k}`: {v['desc']} (Type: {v['type']})\n"
+
         system_prompt = f"""
 You are a Pandas Data Analyst. You have access to a DataFrame `df` containing shipment data.
 Your goal is to write Python code to answer the user's question using `df`.
+
+## Key Column Reference
+{col_ref}
 
 ## Dataset Schema
 Columns: {columns}
@@ -97,26 +108,45 @@ Sample Data:
 
 ## Instructions
 1. Write valid Python/Pandas code.
-2. Assign the final answer (string, number, or dataframe) to the variable `result`.
-3. If the user asks for a list/table, `result` should be that DataFrame or Series.
-4. If the user asks for a chart/plot, `result` should be the data for the plot (the engine will handle format).
-5. Prefer `value_counts()`, `groupby()`, `mean()`, etc.
-6. Return ONLY the code inside a ```python``` block. And explain why.
-7. Use `contains()` while filtering text based columns.
+2. Assign the final answer (string, number, list, or dataframe) to the variable `result`.
+3. For "How many" or "Total" questions, `result` should be a single number.
+4. For "List" or "Which" questions, `result` should be a unique list or a DataFrame.
+5. **STRICT RULE:** Never include internal technical columns like {INTERNAL_COLUMNS} in the final `result`.
+6. **RELEVANCE:** When returning a DataFrame/table, select only the columns relevant to the user's question.
+7. **DATE FORMATTING:** Whenever displaying or returning a datetime column in a result, ALWAYS use `.dt.strftime('%d-%b-%Y')` to ensure a clean, user-friendly format (e.g., '22-Jul-2025').
+8. Use `str.contains(..., na=False, case=False)` for flexible text filtering.
+9. Return ONLY the code inside a ```python``` block. Explain your logic briefly outside the block.
 
 ## Examples:
 User: "How many delivered shipments?"
 Code:
 ```python
-result = df[df['status'] == 'DELIVERED'].shape[0]
-```
-User: "How many container are coming from [LOAD_PORT] to [DISCHARGE_PORT]?
-Code:
-```python
-mask = (df['load_port'].str.contains('LOAD_PORT')) & (df['discharge_port'].str.contains('DISCHARGE_PORT'))
-result = df[mask].shape[0]
+result = df[df['shipment_status'] == 'DELIVERED'].shape[0]
 ```
 
+User: "What is the total weight of my shipments?"
+Code:
+```python
+result = df['cargo_weight_kg'].sum()
+```
+
+User: "Which carriers are involved?"
+Code:
+```python
+result = df['final_carrier_name'].dropna().unique().tolist()
+```
+
+User: "Show me shipments with more than 5 days delay at discharge port."
+Code:
+```python
+# Select only relevant columns and format dates
+cols = ['container_number', 'eta_dp_date', 'optimal_ata_dp_date', 'dp_delayed_dur', 'discharge_port']
+df_filtered = df[df['dp_delayed_dur'] > 5].copy()
+# Apply date formatting
+df_filtered['eta_dp_date'] = df_filtered['eta_dp_date'].dt.strftime('%d-%b-%Y')
+df_filtered['optimal_ata_dp_date'] = df_filtered['optimal_ata_dp_date'].dt.strftime('%d-%b-%Y')
+result = df_filtered[cols]
+```
 """
 
         messages = [

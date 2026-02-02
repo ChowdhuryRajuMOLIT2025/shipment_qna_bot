@@ -8,6 +8,7 @@ from azure.storage.blob import BlobClient
 from dotenv import find_dotenv, load_dotenv
 
 from shipment_qna_bot.logging.logger import logger
+from shipment_qna_bot.tools.analytics_metadata import ANALYTICS_METADATA
 from shipment_qna_bot.tools.date_tools import get_today_date
 from shipment_qna_bot.utils.runtime import is_test_mode
 
@@ -176,16 +177,18 @@ class BlobAnalyticsManager:
 
             filtered_df = df.loc[valid_indices].copy()
 
-            # Convert numeric columns from string to numeric
-            numeric_cols = [
-                "cargo_weight_kg",
-                "cargo_measure_cubic_meter",
-                "cargo_count",
-                "cargo_detail_count",
-            ]
-            for col in numeric_cols:
+            # Automatic Type Casting based on Metadata
+            for col, meta in ANALYTICS_METADATA.items():
                 if col in filtered_df.columns:
-                    filtered_df[col] = pd.to_numeric(filtered_df[col], errors="coerce")
+                    col_type = meta.get("type")
+                    if col_type == "numeric":
+                        filtered_df[col] = pd.to_numeric(
+                            filtered_df[col], errors="coerce"
+                        )
+                    elif col_type == "datetime":
+                        filtered_df[col] = pd.to_datetime(
+                            filtered_df[col], errors="coerce"
+                        )
 
             logger.info(
                 f"Loaded {len(filtered_df)} rows for codes {consignee_codes[:3]}..."

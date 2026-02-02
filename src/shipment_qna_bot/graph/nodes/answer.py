@@ -257,6 +257,10 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     "shipment_status",
                     "po_numbers",
                     "booking_numbers",
+                    "true_carrier_scac_name",
+                    "final_carrier_name",
+                    "first_vessel_name",
+                    "final_vessel_name",
                 ]
 
                 if is_fd:
@@ -281,12 +285,26 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                         ]
                     )
 
+                # Add numeric details for grounding
+                priority_fields.extend(
+                    [
+                        "cargo_weight_kg",
+                        "cargo_measure_cubic_meter",
+                        "cargo_count",
+                        "cargo_detail_count",
+                    ]
+                )
+
                 priority_fields.append("hot_container_flag")
                 priority_fields.append("empty_container_return_date")
 
                 for f in priority_fields:
                     if f in hit:
                         context_str += f"{f}: {hit[f]}\n"
+
+                # Always include full content for grounding if available
+                if "content" in hit:
+                    context_str += f"Content: {hit['content']}\n"
 
                 # Add metadata_json content intelligently
                 if "metadata_json" in hit:
@@ -339,7 +357,7 @@ Logistics Concepts:
 - ETA FD: Estimated Time of Arrival at Final Destination (use 'eta_fd_date' field).
 - Delay DP/FD: Use dp_delayed_dur and fd_delayed_dur.
 
-Result Guidelines:
+System Instructions:
 1. DATA PRESENTATION (STRICT):
    - If multiple shipments are found, ALWAYS present them in a Markdown Table.
    - TABLE COLUMNS: | Container | PO Numbers | {dest_label} | {date_label} | Status |
@@ -347,15 +365,20 @@ Result Guidelines:
    - STATUS: Mention if "Delayed" or "Hot" in the status column if applicable.
    - HIDE: Do not show 'document_id' or 'doc_id' in the answer.
 
-2. ANALYTICS (CRITICAL):
+2. NUMERIC & LOGISTICS DETAILS (IMPORTANT):
+   - Always report Weight (cargo_weight_kg), Volume (cargo_measure_cubic_meter), and counts if requested.
+   - Always report Carrier (true_carrier_scac_name or final_carrier_name) and Vessel (first_vessel_name or final_vessel_name) details if requested.
+   - Never say "data not available" if these fields have values in the Document sections.
+
+3. ANALYTICS (CRITICAL):
    - Use "Total Matches in System" for the high-level count. 
    - Use "Status Breakdown" (facets) for accurate aggregate numbers.
    - Mention total counts in your summary.
 
-3. GROUNDING:
+4. GROUNDING:
    - Use ONLY the provided context. Do not speculate.
 
-4. SUMMARY:
+5. SUMMARY:
    - Briefly summarize key findings (e.g. "5 containers found, 2 are hot/priority").
 """.strip()
 
@@ -479,11 +502,19 @@ Result Guidelines:
 
             def _build_count_prefix() -> Optional[str]:
                 po_list = requested_ids.get("po_numbers") or []
-                if not po_list:
+                cont_list = requested_ids.get("container_number") or []
+
+                if not po_list and not cont_list:
                     return None
-                label = "PO number" if len(po_list) == 1 else "PO numbers"
-                nums = ", ".join(po_list)
-                prefix = f"{total_count} containers are carrying {label} {nums}."
+
+                if cont_list and not po_list:
+                    label = "container" if len(cont_list) == 1 else "containers"
+                    nums = ", ".join(cont_list)
+                else:
+                    label = "PO number" if len(po_list) == 1 else "PO numbers"
+                    nums = ", ".join(po_list)
+
+                prefix = f"{total_count} shipments found for {label} {nums}."
                 if total_count > display_count and display_count > 0:
                     prefix += f" Showing {display_count} of {total_count} below."
                 return prefix
@@ -521,6 +552,8 @@ Result Guidelines:
                     "final_destination" if is_fd else "discharge_port",
                     "eta_fd_date" if is_fd else "eta_dp_date",
                     "shipment_status",
+                    "final_carrier_name",
+                    "final_vessel_name",
                     "hot_container_flag",
                 ]
                 table_rows: List[Dict[str, Any]] = []

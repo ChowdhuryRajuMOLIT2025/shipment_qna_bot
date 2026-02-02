@@ -50,7 +50,9 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     containers = [c.upper() for c in re.findall(container_pattern, text)]
     pos = [
-        p.upper() for p in re.findall(po_pattern, text, re.IGNORECASE) if len(p) >= 5
+        p.upper()
+        for p in re.findall(po_pattern, text, re.IGNORECASE)
+        if len(p) >= 5 and p.upper() not in containers
     ]
     obls = [o.upper() for o in re.findall(obl_pattern, text, re.IGNORECASE)]
     bookings = [b.upper() for b in re.findall(booking_pattern, text, re.IGNORECASE)]
@@ -116,7 +118,13 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
             )
         ),
         "po_numbers": list(
-            set([x.upper() for x in (pos + (llm_extracted.get("po_numbers") or []))])
+            set(
+                [
+                    x.upper()
+                    for x in (pos + (llm_extracted.get("po_numbers") or []))
+                    if x.upper() not in containers
+                ]
+            )
         ),
         "booking_numbers": list(
             set(

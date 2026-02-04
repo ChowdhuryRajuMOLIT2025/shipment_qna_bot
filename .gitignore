@@ -32,14 +32,3 @@ logs_debug.txt
 src/shipment_qna_bot/logs/
 docs/SYSTEM_LOGIC.md
 .agent/
-#
-# Unignore requested directories and docs contents
-!docs/**
-!data/
-!data/**
-!data_cache/
-!data_cache/**
-!.agent/
-!.agent/**
-!data/final_verify_output.txt
-!docs/SYSTEM_LOGIC.md

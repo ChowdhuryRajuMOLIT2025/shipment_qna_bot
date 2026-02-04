@@ -31,3 +31,4 @@ data/final_verify_output.txt
 logs_debug.txt
 src/shipment_qna_bot/logs/
 docs/SYSTEM_LOGIC.md
+.agent/

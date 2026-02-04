@@ -219,12 +219,12 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         filter_clauses: List[str] = []
         has_strong_ids = bool(all_ids)
-        
+
         # Merge LLM extra_filter if it doesn't seem to be a redundant copy of what we'll add deterministically
         llm_filter = plan.get("extra_filter")
         if llm_filter and not has_strong_ids:
-            # Simple heuristic: if the LLM filter is exactly 'hot_container_flag eq true' 
-            # and we are about to add it anyway, skip it. 
+            # Simple heuristic: if the LLM filter is exactly 'hot_container_flag eq true'
+            # and we are about to add it anyway, skip it.
             # But better to just let the LLM generate it and we append safely.
             # To avoid the doubling seen in logs, we'll prefix it.
             filter_clauses.append(f"({llm_filter})")

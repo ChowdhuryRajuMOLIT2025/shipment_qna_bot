@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shipment Q&A Bot</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
             --bg-color: #1a1a1a;
@@ -26,6 +27,7 @@
             display: flex;
             justify-content: center;
             height: 100vh;
+            overflow: hidden;
         }
 
         #app {
@@ -35,6 +37,7 @@
             flex-direction: column;
             background-color: var(--chat-bg);
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            height: 100vh;
         }
 
         header {
@@ -100,6 +103,12 @@
             display: flex;
             flex-direction: column;
             gap: 15px;
+            scrollbar-width: none;
+        }
+
+        #chat-container::-webkit-scrollbar {
+            width: 0;
+            height: 0;
         }
 
         .message {
@@ -261,6 +270,30 @@
         .page-info {
             color: #aaa;
         }
+
+        .chart-wrapper {
+            margin-top: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 10px 12px 16px 12px;
+        }
+
+        .chart-title {
+            font-size: 0.85rem;
+            color: #ddd;
+            margin: 0 0 8px 2px;
+        }
+
+        .chart-area {
+            height: 280px;
+        }
+
+        .chart-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
     </style>
 </head>
 
@@ -401,7 +434,12 @@
 
         syncServerInstance();
 
-        function addMessage(text, role, metadata = null, table = null) {
+        if (window.Chart) {
+            Chart.defaults.color = '#e0e0e0';
+            Chart.defaults.borderColor = 'rgba(255,255,255,0.15)';
+        }
+
+        function addMessage(text, role, metadata = null, table = null, chart = null) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
 
@@ -413,6 +451,11 @@
                 if (table && table.rows && table.rows.length > 0) {
                     const tableEl = renderTable(table);
                     div.appendChild(tableEl);
+                }
+
+                if (chart && chart.data && chart.data.length > 0) {
+                    const chartEl = renderChart(chart);
+                    div.appendChild(chartEl);
                 }
 
                 if (metadata) {
@@ -522,6 +565,153 @@
             return wrapper;
         }
 
+        function renderChart(chartSpec) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chart-wrapper';
+
+            if (chartSpec.title) {
+                const title = document.createElement('div');
+                title.className = 'chart-title';
+                title.textContent = chartSpec.title;
+                wrapper.appendChild(title);
+            }
+
+            if (!window.Chart) {
+                const msg = document.createElement('div');
+                msg.textContent = 'Chart library not available.';
+                wrapper.appendChild(msg);
+                return wrapper;
+            }
+
+            const area = document.createElement('div');
+            area.className = 'chart-area';
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'chart-canvas';
+            area.appendChild(canvas);
+            wrapper.appendChild(area);
+
+            const kind = (chartSpec.kind || 'bar').toLowerCase();
+            const dataRows = chartSpec.data || [];
+            const enc = chartSpec.encodings || {};
+
+            const yKey = enc.y || 'count';
+            const colorKey = enc.color || null;
+
+            function uniquePreserve(items) {
+                const seen = new Set();
+                const out = [];
+                items.forEach(item => {
+                    if (!seen.has(item)) {
+                        seen.add(item);
+                        out.push(item);
+                    }
+                });
+                return out;
+            }
+
+            function pickXKey() {
+                if (enc.x) return enc.x;
+                if (dataRows.length === 0) return 'label';
+                const keys = Object.keys(dataRows[0] || {});
+                for (const k of keys) {
+                    if (k === yKey || k === colorKey) continue;
+                    return k;
+                }
+                return keys[0] || 'label';
+            }
+
+            const xKey = pickXKey();
+            const palette = [
+                '#4e79a7', '#f28e2b', '#e15759', '#76b7b2',
+                '#59a14f', '#edc949', '#af7aa1', '#ff9da7',
+                '#9c755f', '#bab0ab'
+            ];
+
+            let chartData;
+            let options = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true },
+                    tooltip: { enabled: true }
+                },
+                layout: {
+                    padding: { left: 6, right: 12, top: 4, bottom: 6 }
+                }
+            };
+
+            if (kind === 'pie' || kind === 'doughnut') {
+                const labels = [];
+                const values = [];
+                const labelMap = new Map();
+                dataRows.forEach(row => {
+                    const label = String(row[xKey] ?? row[colorKey] ?? row.label ?? row.category ?? '');
+                    const val = Number(row[yKey] ?? 0);
+                    labelMap.set(label, (labelMap.get(label) || 0) + val);
+                });
+                labelMap.forEach((v, k) => {
+                    labels.push(k);
+                    values.push(v);
+                });
+
+                chartData = {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: labels.map((_, i) => palette[i % palette.length]),
+                        borderWidth: 1
+                    }]
+                };
+            } else {
+                const labels = uniquePreserve(dataRows.map(row => String(row[xKey])));
+                const groups = colorKey
+                    ? uniquePreserve(dataRows.map(row => String(row[colorKey])))
+                    : ['value'];
+
+                const datasets = groups.map((group, idx) => {
+                    const data = labels.map(label => {
+                        const row = dataRows.find(r =>
+                            String(r[xKey]) === label &&
+                            (!colorKey || String(r[colorKey]) === group)
+                        );
+                        return row ? Number(row[yKey] ?? 0) : 0;
+                    });
+                    return {
+                        label: colorKey ? group : (chartSpec.title || yKey),
+                        data,
+                        backgroundColor: palette[idx % palette.length],
+                        borderColor: palette[idx % palette.length],
+                        borderWidth: 1
+                    };
+                });
+
+                chartData = { labels, datasets };
+                options.scales = {
+                    x: {
+                        ticks: {
+                            color: '#e0e0e0',
+                            maxRotation: 45,
+                            minRotation: 45
+                        },
+                        grid: { color: 'rgba(255,255,255,0.08)' }
+                    },
+                    y: {
+                        ticks: { color: '#e0e0e0' },
+                        grid: { color: 'rgba(255,255,255,0.08)' }
+                    }
+                };
+            }
+
+            new Chart(canvas.getContext('2d'), {
+                type: (kind === 'pie' || kind === 'doughnut') ? kind : 'bar',
+                data: chartData,
+                options
+            });
+
+            return wrapper;
+        }
+
         async function sendMessage(e) {
             e.preventDefault();
             const text = input.value.trim();
@@ -557,7 +747,7 @@
                 const data = await response.json();
 
                 if (data.answer) {
-                    addMessage(data.answer, 'bot', data.metadata, data.table);
+                    addMessage(data.answer, 'bot', data.metadata, data.table, data.chart);
                     if (data.intent === 'end') {
                         // Session was cleared on backend, let's clear local UI too for next turn
                         setTimeout(() => {

@@ -86,6 +86,21 @@ class PandasAnalyticsEngine:
                     )
                     filtered_preview = preview_df.to_markdown(index=False)
 
+            table_spec = None
+            table_total_rows = None
+            table_truncated = False
+
+            def _to_py(val: Any) -> Any:
+                if pd.isna(val):
+                    return None
+                if isinstance(val, (pd.Timestamp,)):
+                    return val.isoformat()
+                if isinstance(val, (np.integer, np.floating)):
+                    return val.item()
+                if isinstance(val, (np.ndarray,)):
+                    return val.tolist()
+                return val
+
             # If result is a dataframe or series, convert to something json-serializable/string
             # for the agent to consume easily
             if isinstance(result_val, (pd.DataFrame, pd.Series)):
@@ -96,7 +111,29 @@ class PandasAnalyticsEngine:
                         "result": "",
                         "final_answer": "No rows matched your filters.",
                     }
-                result_export = result_val.to_markdown()
+
+                if isinstance(result_val, pd.Series):
+                    name = result_val.name or "value"
+                    result_df = result_val.reset_index()
+                    result_df.columns = ["key", name]
+                else:
+                    result_df = result_val
+
+                table_total_rows = len(result_df)
+                max_rows = 200
+                table_truncated = table_total_rows > max_rows
+                table_df = result_df.head(max_rows)
+
+                rows = []
+                for row in table_df.to_dict(orient="records"):
+                    rows.append({k: _to_py(v) for k, v in row.items()})
+
+                table_spec = {
+                    "columns": list(table_df.columns),
+                    "rows": rows,
+                }
+
+                result_export = result_df.to_markdown()
             else:
                 result_export = str(result_val) if result_val is not None else ""
 
@@ -111,6 +148,9 @@ class PandasAnalyticsEngine:
                 "result_type": result_type,
                 "filtered_rows": filtered_rows,
                 "filtered_preview": filtered_preview,
+                "table_spec": table_spec,
+                "table_total_rows": table_total_rows,
+                "table_truncated": table_truncated,
             }
 
         except Exception as e:

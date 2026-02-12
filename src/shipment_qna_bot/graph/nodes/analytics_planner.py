@@ -1,6 +1,7 @@
 import ast
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
@@ -36,6 +37,225 @@ def _get_pandas_engine() -> PandasAnalyticsEngine:
     if _PANDAS_ENG is None:
         _PANDAS_ENG = PandasAnalyticsEngine()
     return _PANDAS_ENG
+
+
+def _mentions_final_destination(text: str) -> bool:
+    lowered = text.lower()
+    if "final destination" in lowered or "final_destination" in lowered:
+        return True
+    if "distribution center" in lowered or "distribution centre" in lowered:
+        return True
+    if re.search(r"\bin-?dc\b", lowered):
+        return True
+    if re.search(r"\bfd\b", lowered):
+        return True
+    return False
+
+
+def _extract_time_windows(text: str) -> List[str]:
+    lowered = text.lower()
+    windows: List[str] = []
+
+    def _add(label: str) -> None:
+        if label not in windows:
+            windows.append(label)
+
+    if "today" in lowered:
+        _add("today")
+    if re.search(r"\bweek\b", lowered) or "next week" in lowered:
+        _add("this_week")
+    if (
+        "fortnight" in lowered
+        or re.search(r"\b14\b", lowered)
+        or re.search(r"\b15\b", lowered)
+        or "two weeks" in lowered
+        or "next 2 weeks" in lowered
+        or "next two weeks" in lowered
+    ):
+        _add("this_fortnight")
+    if "month" in lowered:
+        _add("this_month")
+
+    return windows
+
+
+def _get_now_ts(state: Dict[str, Any]) -> datetime:
+    raw = state.get("now_utc") or state.get("today_date")
+    if raw:
+        try:
+            s = str(raw).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                return dt
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        except Exception:
+            pass
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _build_arrival_bucket_chart(
+    df, question: str, state: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    lowered = question.lower()
+    chart_words = ["chart", "graph", "plot", "visualize", "bar"]
+    bucket_words = ["bucket", "breakdown", "group"]
+    windows = _extract_time_windows(lowered)
+
+    bucket_requested = any(w in lowered for w in bucket_words)
+    wants_chart = any(w in lowered for w in chart_words) or bucket_requested
+    has_hot_normal = "hot" in lowered or "normal" in lowered
+
+    if not windows and bucket_requested:
+        windows = ["today", "this_week", "this_fortnight", "this_month"]
+
+    if not windows or not (wants_chart or has_hot_normal):
+        return None
+
+    try:
+        import pandas as pd
+    except Exception:
+        return None
+
+    use_fd = _mentions_final_destination(lowered)
+    arrival = pd.Series(pd.NaT, index=df.index)
+
+    if use_fd:
+        if "optimal_eta_fd_date" in df.columns:
+            arrival = df["optimal_eta_fd_date"].copy()
+        elif "eta_fd_date" in df.columns:
+            arrival = df["eta_fd_date"].copy()
+        else:
+            return None
+        if "eta_fd_date" in df.columns:
+            arrival = arrival.fillna(df["eta_fd_date"])
+    else:
+        if "optimal_ata_dp_date" in df.columns:
+            arrival = df["optimal_ata_dp_date"].copy()
+        elif "eta_dp_date" in df.columns:
+            arrival = df["eta_dp_date"].copy()
+        elif "ata_dp_date" in df.columns:
+            arrival = df["ata_dp_date"].copy()
+        else:
+            return None
+        if "eta_dp_date" in df.columns:
+            arrival = arrival.fillna(df["eta_dp_date"])
+        if "ata_dp_date" in df.columns:
+            arrival = arrival.fillna(df["ata_dp_date"])
+
+    hot_flag = (
+        df["hot_container_flag"].fillna(False).astype(bool)
+        if "hot_container_flag" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+
+    hot_normal_phrases = [
+        "hot vs normal",
+        "normal vs hot",
+        "hot/normal",
+        "hot and normal",
+        "normal and hot",
+        "hot flag",
+    ]
+
+    if any(p in lowered for p in hot_normal_phrases) or (
+        "hot" in lowered and "normal" in lowered
+    ):
+        categories = ["hot", "normal"]
+    elif "hot" in lowered:
+        categories = ["hot"]
+    elif "normal" in lowered:
+        categories = ["normal"]
+    else:
+        categories = ["total"]
+
+    bucket_days = {
+        "today": 1,
+        "this_week": 7,
+        "this_fortnight": 14,
+        "this_month": 30,
+    }
+    now = _get_now_ts(state)
+
+    chart_rows: List[Dict[str, Any]] = []
+    table_rows: List[Dict[str, Any]] = []
+
+    for bucket in windows:
+        days = bucket_days.get(bucket)
+        if not days:
+            continue
+        end = now + timedelta(days=days)
+        mask = arrival.notna() & (arrival >= now) & (arrival < end)
+        row: Dict[str, Any] = {"bucket": bucket}
+
+        if categories == ["total"]:
+            total_count = int(mask.sum())
+            row["total_count"] = total_count
+            chart_rows.append(
+                {"bucket": bucket, "category": "total", "count": total_count}
+            )
+        else:
+            total_count = int(mask.sum())
+            if "hot" in categories:
+                hot_count = int((mask & hot_flag).sum())
+                row["hot_count"] = hot_count
+                chart_rows.append(
+                    {"bucket": bucket, "category": "hot", "count": hot_count}
+                )
+            if "normal" in categories:
+                normal_count = int((mask & ~hot_flag).sum())
+                row["normal_count"] = normal_count
+                chart_rows.append(
+                    {
+                        "bucket": bucket,
+                        "category": "normal",
+                        "count": normal_count,
+                    }
+                )
+            row["total_count"] = total_count
+
+        table_rows.append(row)
+
+    if not chart_rows or not table_rows:
+        return None
+
+    loc_label = "Final Destination" if use_fd else "Discharge Port"
+    if categories == ["total"]:
+        title = f"{loc_label} Arrival Buckets"
+        encodings = {"x": "bucket", "y": "count"}
+    elif len(windows) == 1:
+        title = f"{loc_label} Arrivals (Hot vs Normal)"
+        encodings = {"x": "category", "y": "count"}
+    else:
+        title = f"{loc_label} Arrival Buckets (Hot vs Normal)"
+        encodings = {"x": "bucket", "y": "count", "color": "category"}
+
+    chart_spec = {
+        "kind": "bar",
+        "title": title,
+        "data": chart_rows,
+        "encodings": encodings,
+    }
+    table_spec = {
+        "columns": list(table_rows[0].keys()),
+        "rows": table_rows,
+        "title": f"{loc_label} Arrival Buckets",
+    }
+
+    summary_lines = []
+    for row in table_rows:
+        if "hot_count" in row or "normal_count" in row:
+            summary_lines.append(
+                f"{row['bucket']}: hot={row.get('hot_count', 0)}, normal={row.get('normal_count', 0)}, total={row.get('total_count', 0)}"
+            )
+        else:
+            summary_lines.append(f"{row['bucket']}: total={row.get('total_count', 0)}")
+    answer_text = "Analysis Result:\n" + "\n".join(summary_lines)
+
+    return {
+        "answer_text": answer_text,
+        "chart_spec": chart_spec,
+        "table_spec": table_spec,
+    }
 
 
 def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -86,6 +306,14 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "I couldn't load the analytics dataset right now. "
                 "Please try again in a moment."
             )
+            state["is_satisfied"] = True
+            return state
+
+        bucket_payload = _build_arrival_bucket_chart(df, q, state)
+        if bucket_payload:
+            state["answer_text"] = bucket_payload["answer_text"]
+            state["chart_spec"] = bucket_payload["chart_spec"]
+            state["table_spec"] = bucket_payload["table_spec"]
             state["is_satisfied"] = True
             return state
 
@@ -165,6 +393,12 @@ Sample Data:
 9. Use `str.contains(..., na=False, case=False, regex=True)` for flexible text filtering.
 10. Return ONLY the code inside a ```python``` block. Explain your logic briefly outside the block.
 11. When filtering based on date, show the coolumn name and its value
+12. **CHARTS:** If the user asks for a chart/graph/plot/bucket/breakdown, do NOT use matplotlib or seaborn. Instead, return a Python dict assigned to `result` with:
+    - `answer_text`: short summary
+    - `chart_spec`: {{kind, title, data (list of row dicts), encodings}}
+    - `table_spec` (optional): {{columns, rows, title}}
+    The `data` rows must be JSON-serializable (no DataFrames/Series in dicts).
+13. **AVOID:** Do not return DataFrames inside a dict; return a DataFrame directly or use `table_spec`.
 
 ## Examples:
 User: "How many delivered shipments?"
@@ -205,6 +439,37 @@ cols = ['container_number', 'po_numbers', 'etd_lp_date', 'load_port']
 df_filtered = df[df['etd_lp_date'].dt.isocalendar().week == (today_week + 1)].copy()
 df_filtered['etd_lp_date'] = df_filtered['etd_lp_date'].dt.strftime('%d-%b-%Y')
 result = df_filtered[cols]
+```
+
+User: "Show a chart of hot vs normal containers arriving this month."
+Code:
+```python
+# Filter arrivals this month and count hot vs normal
+today = pd.Timestamp.utcnow()
+df_filtered = df[df['optimal_ata_dp_date'].notna()].copy()
+df_filtered = df_filtered[
+    (df_filtered['optimal_ata_dp_date'].dt.month == today.month)
+    & (df_filtered['optimal_ata_dp_date'].dt.year == today.year)
+]
+counts = df_filtered.groupby('hot_container_flag')['container_number'].count()
+data = [
+    {{"category": "normal", "count": int(counts.get(False, 0))}},
+    {{"category": "hot", "count": int(counts.get(True, 0))}},
+]
+result = {{
+    "answer_text": "Hot vs normal arrivals for this month.",
+    "chart_spec": {{
+        "kind": "bar",
+        "title": "Hot vs Normal Arrivals (This Month)",
+        "data": data,
+        "encodings": {{"x": "category", "y": "count"}},
+    }},
+    "table_spec": {{
+        "columns": ["category", "count"],
+        "rows": data,
+        "title": "Hot vs Normal Arrivals",
+    }},
+}}
 ```
 """
 
@@ -277,9 +542,27 @@ result = df_filtered[cols]
                 elif filtered_rows == 0:
                     final_ans = "No shipments matched your filters."
 
+            table_spec = exec_result.get("table_spec")
+            table_total_rows = exec_result.get("table_total_rows")
+            table_truncated = exec_result.get("table_truncated")
+
+            if isinstance(table_spec, dict) and table_spec.get("rows"):
+                state["table_spec"] = table_spec
+                if table_total_rows is not None:
+                    if table_truncated:
+                        final_ans = (
+                            f"Showing the first {len(table_spec.get('rows') or [])} "
+                            f"of {table_total_rows} rows."
+                        )
+                    else:
+                        final_ans = f"Found {table_total_rows} rows."
+                else:
+                    final_ans = "Here are the results."
+
             # Basic formatting if it's just a raw value
             state["answer_text"] = f"Analysis Result:\n{final_ans}"
             state["is_satisfied"] = True
+
             def _maybe_parse_dict(val: Any) -> Optional[Dict[str, Any]]:
                 if isinstance(val, dict):
                     return val

@@ -75,7 +75,7 @@ def clarification_node(state: GraphState) -> GraphState:
 
         messages = [{"role": "system", "content": system_prompt}]
 
-        # Add history for context (optional, but good for flow)
+        # Add history for context (optional for flow)
         # We limit history to avoid huge context, just last few turns + current question
         for msg in history[-4:]:
             role = "user" if isinstance(msg, HumanMessage) else "assistant"

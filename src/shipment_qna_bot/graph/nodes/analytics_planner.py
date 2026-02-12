@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -99,10 +100,10 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         ready_ref_content = ""
         try:
             # Assuming docs is at the root of the project, relative to this file path
-            # This file is in src/shipment_qna_bot/graph/nodes/
+            # file is in src/shipment_qna_bot/graph/nodes/
             # docs is in docs/
-            # So we need to go up 4 levels: .../src/shipment_qna_bot/graph/nodes/../../../../docs/ready_ref.md
-            # Better to use a relative path from the CWD if we assume running from root
+            # need to go up 4 levels: .../src/shipment_qna_bot/graph/nodes/../../../../docs/ready_ref.md
+            # use a relative path from the CWD, assume running from root
             import os
 
             ready_ref_path = "docs/ready_ref.md"
@@ -122,8 +123,8 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             logger.warning(f"Could not load ready_ref.md: {e}")
 
         col_ref = ""
-        # We have ready_ref, we might not need the auto-generated list,
-        # but let's keep the auto-generated one for now as a fallback or concise list if ready_ref is missing columns.
+        # We have ready_ref, we do not need the auto-generated list,
+        # but let's keep the auto-generated one for now as a fallback or concise list if ready_ref is missing columns and testing.
         # Actually, the ready_ref to be THE source for LLM understanding.
         # Now, let's append the ready ref to the context.
 
@@ -160,9 +161,10 @@ Sample Data:
 7. **DATE FORMATTING:** Whenever displaying or returning a datetime column in a result, ALWAYS use `.dt.strftime('%d-%b-%Y')` to ensure a clean, user-friendly format (e.g., '22-Jul-2025').
 8. **COLUMN SELECTION:**
    - DEFAULT to using `optimal_ata_dp_date` for arrival/delay calculations (unless value is null, then fall back to `eta_dp_date`).
-   - ONLY use `etd_fd_date` (or `eta_fd_date`) if the user explicitly asks for "Final Destination" (FD) or "In-CD".
+   - ONLY use `optimal_eta_fd_date` (or `optimal_eta_fd_date`) if the user explicitly asks for "Final Destination" (FD) or "In-CD".
 9. Use `str.contains(..., na=False, case=False, regex=True)` for flexible text filtering.
-9. Return ONLY the code inside a ```python``` block. Explain your logic briefly outside the block.
+10. Return ONLY the code inside a ```python``` block. Explain your logic briefly outside the block.
+11. When filtering based on date, show the coolumn name and its value
 
 ## Examples:
 User: "How many delivered shipments?"
@@ -278,8 +280,47 @@ result = df_filtered[cols]
             # Basic formatting if it's just a raw value
             state["answer_text"] = f"Analysis Result:\n{final_ans}"
             state["is_satisfied"] = True
+            def _maybe_parse_dict(val: Any) -> Optional[Dict[str, Any]]:
+                if isinstance(val, dict):
+                    return val
+                if isinstance(val, str):
+                    s = val.strip()
+                    if s.startswith("{") and s.endswith("}"):
+                        try:
+                            return json.loads(s)
+                        except Exception:
+                            try:
+                                return ast.literal_eval(s)
+                            except Exception:
+                                return None
+                return None
 
-            # TODO: If we want to pass chart specs, we'd parse that here.
+            payload = _maybe_parse_dict(exec_result.get("result"))
+            if payload is None:
+                payload = _maybe_parse_dict(exec_result.get("final_answer"))
+
+            if isinstance(payload, dict):
+                chart_payload = _maybe_parse_dict(
+                    payload.get("chart_spec") or payload.get("chart")
+                )
+                table_payload = _maybe_parse_dict(
+                    payload.get("table_spec") or payload.get("table")
+                )
+                if chart_payload:
+                    state["chart_spec"] = chart_payload
+                if table_payload:
+                    state["table_spec"] = table_payload
+
+                answer_payload = (
+                    payload.get("answer_text")
+                    or payload.get("answer")
+                    or payload.get("text")
+                    or payload.get("result")
+                    or payload.get("value")
+                )
+                if answer_payload is not None and str(answer_payload).strip():
+                    final_ans = str(answer_payload)
+                    state["answer_text"] = f"Analysis Result:\n{final_ans}"
         else:
             error_msg = exec_result.get("error")
             logger.warning(f"Pandas Execution Error: {error_msg}")

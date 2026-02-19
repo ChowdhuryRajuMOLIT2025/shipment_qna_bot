@@ -27,12 +27,30 @@ def intent_node(state: GraphState) -> GraphState:
         {"question": (state.get("normalized_question") or "")[:120]},
         state_ref=state,
     ):
-        text = state.get("normalized_question", "")
+        text = (state.get("normalized_question") or "").strip()
+        raw_text = (state.get("question_raw") or "").strip()
         if not text:
             state["intent"] = "end"
             return state
 
-        if should_handle_overview(text):
+        overview_source = None
+        if raw_text and should_handle_overview(raw_text):
+            overview_source = "raw"
+        elif should_handle_overview(text):
+            overview_source = "normalized"
+
+        if overview_source:
+            logger.info(
+                "Intent forced to company_overview by overview gate",
+                extra={
+                    "extra_data": {
+                        "source": overview_source,
+                        "text_snippet": (raw_text if overview_source == "raw" else text)[
+                            :80
+                        ],
+                    }
+                },
+            )
             usage_metadata = state.get("usage_metadata") or {
                 "prompt_tokens": 0,
                 "completion_tokens": 0,

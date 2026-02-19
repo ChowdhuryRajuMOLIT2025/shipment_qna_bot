@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, Optional, cast
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -15,6 +16,41 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
     if _chat_tool is None:
         _chat_tool = AzureOpenAIChatTool()
     return _chat_tool
+
+
+def _has_specific_ids(text: str) -> bool:
+    lowered = (text or "").lower()
+    if re.search(r"\b[a-z]{4}\d{7}\b", lowered):
+        return True
+    if re.search(r"\b(container|po|booking|obl|bol)\s*(number|no|#)?\s*[:\-]?\s*[a-z0-9]{6,}\b", lowered):
+        return True
+    return False
+
+
+def _needs_scope_choice(question: str) -> bool:
+    lowered = (question or "").strip().lower()
+    if not lowered or _has_specific_ids(lowered):
+        return False
+
+    explicit_ambiguity = {
+        "show me dates",
+        "show dates",
+        "list shipments",
+        "show shipments",
+        "shipment details",
+        "show status",
+        "check status",
+    }
+    if lowered in explicit_ambiguity:
+        return True
+
+    return bool(
+        re.search(
+            r"\b(show|list|check|give)\b.*\b(shipments?|status|dates?)\b", lowered
+        )
+        and "how many" not in lowered
+        and "count" not in lowered
+    )
 
 
 def clarification_node(state: GraphState) -> GraphState:
@@ -58,6 +94,30 @@ def clarification_node(state: GraphState) -> GraphState:
             state["pending_topic_shift"] = {
                 "raw": raw_q,
                 "normalized": norm_q,
+            }
+            state["topic_shift_candidate"] = None
+            return state
+
+        if _needs_scope_choice(question):
+            analytics_choice = f"Show an analytics summary for: {question}"
+            retrieval_choice = (
+                f"{question} (specific shipment lookup by container/PO/booking/OBL ID)"
+            )
+
+            clarification_text = (
+                "I can help in two ways for this request:\n\n"
+                f"1) Analytics summary across your shipments: {question}\n"
+                "2) Specific shipment lookup by IDs (container/PO/booking/OBL)\n\n"
+                "Reply with 1 or 2."
+            )
+
+            state["answer_text"] = clarification_text
+            state["messages"] = [AIMessage(content=clarification_text)]
+            state["is_satisfied"] = True
+            state["intent"] = "clarification"
+            state["pending_topic_shift"] = {
+                "raw": retrieval_choice,
+                "normalized": analytics_choice,
             }
             state["topic_shift_candidate"] = None
             return state

@@ -66,6 +66,8 @@ class GraphState(TypedDict):
     reflection_feedback: Optional[str]
     pending_topic_shift: Optional[Dict[str, Any]]
     topic_shift_candidate: Optional[Dict[str, Any]]
+    analytics_attempt_count: Optional[int]
+    analytics_last_error: Optional[str]
 
     # --- Metrics ---
     usage_metadata: Dict[

@@ -37,6 +37,80 @@ def _get_pandas_engine() -> PandasAnalyticsEngine:
     return _PANDAS_ENG
 
 
+def _extract_python_code(content: str) -> str:
+    if not content:
+        return ""
+    match = re.search(r"```python\s*(.*?)```", content, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    match = re.search(r"```\s*(.*?)```", content, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return content.strip()
+
+
+def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None:
+    if not isinstance(usage, dict):
+        return
+    usage_metadata = state.get("usage_metadata") or {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    for k, v in usage.items():
+        if isinstance(v, (int, float)):
+            usage_metadata[k] = usage_metadata.get(k, 0) + v
+    state["usage_metadata"] = usage_metadata
+
+
+def _repair_generated_code(
+    question: str,
+    code: str,
+    error_msg: str,
+    columns: List[str],
+    sample_markdown: str,
+) -> tuple[str, Dict[str, Any]]:
+    if is_test_mode():
+        return "", {}
+
+    repair_prompt = f"""
+You are fixing Python/Pandas code that failed to run.
+Return ONLY corrected code in a ```python``` block.
+
+Rules:
+- Use existing DataFrame `df`.
+- Do not import external libraries (especially matplotlib/seaborn).
+- Avoid ambiguous truth checks on DataFrames/Series (`if df:` is invalid).
+- If using `.str`, ensure string-safe operations.
+- Keep output in variable `result`.
+
+Question:
+{question}
+
+Columns:
+{columns}
+
+Sample rows:
+{sample_markdown}
+
+Previous code:
+```python
+{code}
+```
+
+Error:
+{error_msg}
+""".strip()
+
+    chat = _get_chat()
+    resp = chat.chat_completion(
+        [{"role": "user", "content": repair_prompt}],
+        temperature=0.0,
+    )
+    fixed = _extract_python_code(resp.get("content", ""))
+    return fixed, resp.get("usage", {}) or {}
+
+
 def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Pandas Analyst Agent Node.
@@ -166,7 +240,9 @@ Sample Data:
    - For final destination ETA logic, use `best_eta_fd_date` (fallback: `eta_fd_date`).
 9. Use `str.contains(..., na=False, case=False, regex=True)` for flexible text filtering.
 10. **SORTING RULE:** For DataFrame/list outputs containing date columns, sort by latest date first (descending) BEFORE date formatting. Prefer date columns in this order: `best_eta_dp_date`, `best_eta_fd_date`, `ata_dp_date`, `derived_ata_dp_date`, `eta_dp_date`, `eta_fd_date`.
-11. Return ONLY the code inside a ```python``` block. Explain your logic briefly outside the block.
+11. Do NOT import plotting libraries or call charting code (`matplotlib`, `seaborn`, `plotly`).
+12. Avoid ambiguous DataFrame truth checks (`if df:`). Use explicit checks such as `if not df.empty:`.
+13. Return ONLY the code inside a ```python``` block. Explain your logic briefly outside the block.
 
 ## Examples:
 User: "How many delivered shipments?"
@@ -226,14 +302,9 @@ result = df_filtered[cols]
             else:
                 chat = _get_chat()
                 resp = chat.chat_completion(messages, temperature=0.0)
+                _merge_usage(state, resp.get("usage"))
                 content = resp.get("content", "")
-
-                # Extract code block
-                match = re.search(r"```python\s*(.*?)```", content, re.DOTALL)
-                if match:
-                    generated_code = match.group(1).strip()
-                else:
-                    generated_code = content.strip()  # Fallback
+                generated_code = _extract_python_code(content)
 
         except Exception as e:
             logger.error(f"LLM Code Gen Failed: {e}")
@@ -242,7 +313,10 @@ result = df_filtered[cols]
                 "I couldn't generate the analytics query in time. "
                 "Please narrow the request or try again."
             )
-            state["is_satisfied"] = True
+            state["is_satisfied"] = False
+            state["reflection_feedback"] = (
+                "Code generation failed; retry analytics with a simpler plan."
+            )
             return state
 
         # 4. Execute Code
@@ -252,11 +326,37 @@ result = df_filtered[cols]
                 "I couldn't generate a valid analytics query for that question. "
                 "Please rephrase or add more detail."
             )
-            state["is_satisfied"] = True
+            state["is_satisfied"] = False
+            state["reflection_feedback"] = (
+                "No executable code was generated; retry with stricter code-only output."
+            )
             return state
 
         engine = _get_pandas_engine()
+        exec_attempts = 1
         exec_result = engine.execute_code(df, generated_code)
+
+        if not exec_result.get("success"):
+            error_msg = str(exec_result.get("error") or "")
+            logger.warning(
+                "Initial analytics execution failed, attempting one repair: %s",
+                error_msg,
+            )
+            try:
+                repaired_code, repair_usage = _repair_generated_code(
+                    question=q,
+                    code=generated_code,
+                    error_msg=error_msg,
+                    columns=columns,
+                    sample_markdown=head_sample,
+                )
+                _merge_usage(state, repair_usage)
+                if repaired_code and repaired_code != generated_code:
+                    generated_code = repaired_code
+                    exec_attempts += 1
+                    exec_result = engine.execute_code(df, generated_code)
+            except Exception as repair_exc:
+                logger.warning("Analytics repair pass failed: %s", repair_exc)
 
         if exec_result["success"]:
             result_type = exec_result.get("result_type")
@@ -284,18 +384,24 @@ result = df_filtered[cols]
             # Basic formatting if it's just a raw value
             state["answer_text"] = f"Here is what I found:\n{final_ans}"
             state["is_satisfied"] = True
+            state["analytics_last_error"] = None
+            state["analytics_attempt_count"] = exec_attempts
 
             # TODO: If we want to pass chart specs, we'd parse that here.
         else:
             error_msg = exec_result.get("error")
             logger.warning(f"Pandas Execution Error: {error_msg}")
-            # We can allow the Judge to see this or retry.
-            # For now, let's treat it as a failure to satisfy.
             state.setdefault("errors", []).append(f"Analysis Failed: {error_msg}")
             state["answer_text"] = (
                 "I couldn't run that analytics query successfully. "
                 "Please try narrowing the request or rephrasing."
             )
-            state["is_satisfied"] = True
+            state["is_satisfied"] = False
+            state["reflection_feedback"] = (
+                "Analytics execution failed. Regenerate safer pandas code "
+                "without unsupported imports and with valid date/string handling."
+            )
+            state["analytics_last_error"] = str(error_msg or "")
+            state["analytics_attempt_count"] = exec_attempts
 
     return state

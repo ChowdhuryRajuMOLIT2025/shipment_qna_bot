@@ -38,6 +38,24 @@ def judge_node(state: Dict[str, Any]) -> Dict[str, Any]:
         question = state.get("question_raw") or ""
         answer = state.get("answer_text") or ""
         hits = state.get("hits") or []
+        errors = state.get("errors") or []
+
+        if state.get("intent") == "analytics":
+            answer_lower = answer.lower()
+            has_exec_failure = any(
+                str(err).startswith("Analysis Failed:") for err in errors
+            ) or "i couldn't run that analytics query successfully" in answer_lower
+            if has_exec_failure:
+                state["is_satisfied"] = False
+                state["reflection_feedback"] = state.get("reflection_feedback") or (
+                    "Retry analytics with safer executable pandas code."
+                )
+                state["retry_count"] = state.get("retry_count", 0) + 1
+                logger.info(
+                    "Judge forcing analytics retry due execution failure.",
+                    extra={"extra_data": {"retry_count": state["retry_count"]}},
+                )
+                return state
 
         if is_test_mode():
             state["is_satisfied"] = True

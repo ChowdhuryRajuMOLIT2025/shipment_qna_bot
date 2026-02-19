@@ -41,6 +41,10 @@ _ANAPHORA_TOKENS = {
 _CONTROL_REPLIES = {
     "1",
     "2",
+    "option 1",
+    "option 2",
+    "choice 1",
+    "choice 2",
     "a",
     "b",
     "use previous",
@@ -53,6 +57,31 @@ _CONTROL_REPLIES = {
     "ignore",
     "ignore previous",
     "ignore previous context",
+}
+
+_COMPANY_QUERY_TOKENS = {
+    "mcs",
+    "mol",
+    "mol consolidation",
+    "mol consolidation service",
+    "starlink",
+    "mitsui osk",
+}
+
+_COMPANY_INTENT_HINTS = {
+    "what is",
+    "who is",
+    "stand for",
+    "full form",
+    "mean",
+    "meaning",
+    "about",
+    "history",
+    "vision",
+    "mission",
+    "ceo",
+    "office",
+    "services",
 }
 
 
@@ -105,9 +134,26 @@ def _strip_new_topic_prefix(text: str) -> Tuple[str, bool]:
 
 def _parse_topic_shift_choice(text: str) -> Optional[str]:
     lowered = (text or "").strip().lower()
-    if lowered in {"1", "a", "use previous", "use previous context", "use context"}:
+    if lowered in {
+        "1",
+        "a",
+        "option 1",
+        "choice 1",
+        "use previous",
+        "use previous context",
+        "use context",
+    }:
         return "use_previous"
-    if lowered in {"2", "b", "new", "new topic", "ignore", "ignore previous"}:
+    if lowered in {
+        "2",
+        "b",
+        "option 2",
+        "choice 2",
+        "new",
+        "new topic",
+        "ignore",
+        "ignore previous",
+    }:
         return "new_topic"
     return None
 
@@ -115,6 +161,26 @@ def _parse_topic_shift_choice(text: str) -> Optional[str]:
 def _is_control_reply(text: str) -> bool:
     lowered = (text or "").strip().lower()
     return lowered in _CONTROL_REPLIES
+
+
+def _looks_like_specific_lookup(text: str) -> bool:
+    lowered = (text or "").lower()
+    if re.search(r"\b[a-z]{4}\d{7}\b", lowered):
+        return True
+    if re.search(r"\b\d{6,}\b", lowered) and re.search(
+        r"\b(container|po|booking|obl|bol)\b", lowered
+    ):
+        return True
+    return False
+
+
+def _looks_like_company_fact_question(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered or _looks_like_specific_lookup(lowered):
+        return False
+    if not any(token in lowered for token in _COMPANY_QUERY_TOKENS):
+        return False
+    return any(hint in lowered for hint in _COMPANY_INTENT_HINTS)
 
 
 def _topic_shift_candidate(
@@ -186,6 +252,11 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
                 state["pending_topic_shift"] = None
 
         if is_test_mode() or forced_new_topic:
+            state["normalized_question"] = question.lower()
+            state["topic_shift_candidate"] = None
+            return state
+
+        if _looks_like_company_fact_question(question):
             state["normalized_question"] = question.lower()
             state["topic_shift_candidate"] = None
             return state

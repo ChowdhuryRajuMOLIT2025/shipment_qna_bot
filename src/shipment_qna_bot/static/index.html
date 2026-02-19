@@ -121,6 +121,7 @@
             align-self: flex-start;
             background-color: var(--bot-msg-bg);
             border-bottom-left-radius: 5px;
+            max-width: min(95%, 1100px);
         }
 
         .message p {
@@ -194,13 +195,22 @@
             }
         }
 
-        .typing {
-            font-style: italic;
+        .loader-indicator {
+            display: none;
+            align-items: center;
+            gap: 10px;
             color: #aaa;
             font-size: 0.9rem;
-            margin-bottom: 10px;
-            margin-left: 20px;
-            display: none;
+            margin: 0 20px 10px;
+        }
+
+        .loader-video {
+            width: 72px;
+            height: 42px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: #111;
         }
 
         /* Table and Pagination Styles */
@@ -208,12 +218,15 @@
             margin-top: 15px;
             background: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
             border: 1px solid var(--border-color);
         }
 
         .data-table {
-            width: 100%;
+            width: max-content;
+            min-width: 100%;
             border-collapse: collapse;
             font-size: 0.85rem;
         }
@@ -223,11 +236,14 @@
             text-align: left;
             padding: 10px;
             border-bottom: 2px solid var(--border-color);
+            white-space: nowrap;
         }
 
         .data-table td {
             padding: 8px 10px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            white-space: nowrap;
+            vertical-align: top;
         }
 
         .data-table tr:hover {
@@ -260,6 +276,34 @@
 
         .page-info {
             color: #aaa;
+        }
+
+        .message.bot table {
+            border-collapse: collapse;
+        }
+
+        @media (max-width: 900px) {
+            .message {
+                max-width: 95%;
+            }
+
+            .message.bot {
+                max-width: 98%;
+            }
+
+            .data-table {
+                font-size: 0.8rem;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 7px 8px;
+            }
+
+            .loader-video {
+                width: 62px;
+                height: 36px;
+            }
         }
     </style>
 </head>
@@ -297,7 +341,10 @@
                     </div>
                 </div>
 
-                <div class="typing" id="typing-indicator">Typing...</div>
+                <div class="loader-indicator" id="loader-indicator" aria-live="polite" aria-hidden="true">
+                    <video id="loader-video" class="loader-video" src="/static/assets/cargo-loader.mp4" muted loop playsinline preload="metadata"></video>
+                    <span>Analyzing...</span>
+                </div>
 
                 <form id="input-area">
                     <input type="text" id="user-input" placeholder="Type your question..." autocomplete="off">
@@ -312,10 +359,16 @@
         const input = document.getElementById('user-input');
         const consigneeInput = document.getElementById('consignee-input');
         const chatContainer = document.getElementById('chat-container');
-        const typingIndicator = document.getElementById('typing-indicator');
+        const loaderIndicator = document.getElementById('loader-indicator');
+        const loaderVideo = document.getElementById('loader-video');
         const sendBtn = document.getElementById('send-btn');
         const sessionDisplay = document.getElementById('session-display');
         const downloadBtn = document.getElementById('download-btn');
+
+        marked.setOptions({
+            gfm: true,
+            breaks: true
+        });
 
         const INITIAL_BOT_MESSAGE = 'Hello! I can help you track shipments and answer questions. Try asking about specific containers.';
 
@@ -401,17 +454,149 @@
 
         syncServerInstance();
 
+        function stripMarkdownTables(text) {
+            const lines = (text || '').split(/\r?\n/);
+            const kept = [];
+            let i = 0;
+
+            while (i < lines.length) {
+                const current = lines[i] || '';
+                const next = i + 1 < lines.length ? (lines[i + 1] || '') : '';
+
+                const isHeader = /^\s*\|.+\|\s*$/.test(current);
+                const isSep = /^\s*\|[\s:|\-]+\|\s*$/.test(next);
+
+                if (isHeader && isSep) {
+                    i += 2;
+                    while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i] || '')) {
+                        i += 1;
+                    }
+                    continue;
+                }
+
+                kept.push(current);
+                i += 1;
+            }
+
+            return kept.join('\n').trim();
+        }
+
+        function parseSpaceAlignedTable(text) {
+            const lines = (text || '').split(/\r?\n/);
+            let headerIdx = -1;
+            let columns = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = (lines[i] || '').trim();
+                if (!line || !/\s{2,}/.test(line)) {
+                    continue;
+                }
+                const parts = line.split(/\s{2,}/).map(p => p.trim()).filter(Boolean);
+                const validHeader = parts.length >= 2
+                    && parts.some(p => p.includes('_'))
+                    && parts.every(p => /^[A-Za-z][A-Za-z0-9_]*$/.test(p));
+                if (validHeader) {
+                    headerIdx = i;
+                    columns = parts;
+                    break;
+                }
+            }
+
+            if (headerIdx < 0 || !columns) {
+                return null;
+            }
+
+            const rows = [];
+            for (let i = headerIdx + 1; i < lines.length; i++) {
+                const raw = lines[i] || '';
+                const trimmed = raw.trim();
+
+                if (!trimmed) {
+                    continue;
+                }
+
+                if (!/\s{2,}/.test(raw)) {
+                    if (rows.length > 0) {
+                        break;
+                    }
+                    continue;
+                }
+
+                const parts = trimmed.split(/\s{2,}/).map(p => p.trim());
+                if (parts.length < columns.length) {
+                    if (rows.length > 0) {
+                        break;
+                    }
+                    continue;
+                }
+
+                const row = {};
+                columns.forEach((col, idx) => {
+                    let cell = parts[idx] || '-';
+                    if (idx === 0) {
+                        cell = cell.replace(/^\d+\s+/, '');
+                    }
+                    row[col] = cell || '-';
+                });
+                rows.push(row);
+            }
+
+            if (rows.length < 2) {
+                return null;
+            }
+
+            const leadText = lines.slice(0, headerIdx).join('\n').trim();
+            return {
+                leadText,
+                table: {
+                    columns,
+                    rows
+                }
+            };
+        }
+
+        function normalizeRenderedTables(container) {
+            const mdTables = container.querySelectorAll('table');
+            mdTables.forEach(t => {
+                t.classList.add('data-table');
+                if (!t.parentElement || !t.parentElement.classList.contains('table-wrapper')) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'table-wrapper';
+                    t.parentNode.insertBefore(wrapper, t);
+                    wrapper.appendChild(t);
+                }
+            });
+        }
+
         function addMessage(text, role, metadata = null, table = null) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
 
             if (role === 'bot') {
+                let renderText = text || '';
+                let fallbackTable = null;
+
+                if (table && table.rows && table.rows.length > 0) {
+                    renderText = stripMarkdownTables(renderText);
+                } else {
+                    fallbackTable = parseSpaceAlignedTable(renderText);
+                    if (fallbackTable) {
+                        renderText = fallbackTable.leadText || '';
+                    }
+                }
+
                 const contentDiv = document.createElement('div');
-                contentDiv.innerHTML = marked.parse(text);
-                div.appendChild(contentDiv);
+                if (renderText.trim()) {
+                    contentDiv.innerHTML = marked.parse(renderText);
+                    normalizeRenderedTables(contentDiv);
+                    div.appendChild(contentDiv);
+                }
 
                 if (table && table.rows && table.rows.length > 0) {
                     const tableEl = renderTable(table);
+                    div.appendChild(tableEl);
+                } else if (fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
+                    const tableEl = renderTable(fallbackTable.table);
                     div.appendChild(tableEl);
                 }
 
@@ -541,7 +726,12 @@
             input.value = '';
             input.disabled = true;
             sendBtn.disabled = true;
-            typingIndicator.style.display = 'block';
+            loaderIndicator.style.display = 'flex';
+            loaderIndicator.setAttribute('aria-hidden', 'false');
+            if (loaderVideo) {
+                loaderVideo.currentTime = 0;
+                loaderVideo.play().catch(() => {});
+            }
 
             try {
                 const response = await fetch('/api/chat', {
@@ -577,7 +767,12 @@
                 input.disabled = false;
                 sendBtn.disabled = false;
                 input.focus();
-                typingIndicator.style.display = 'none';
+                loaderIndicator.style.display = 'none';
+                loaderIndicator.setAttribute('aria-hidden', 'true');
+                if (loaderVideo) {
+                    loaderVideo.pause();
+                    loaderVideo.currentTime = 0;
+                }
             }
         }
 

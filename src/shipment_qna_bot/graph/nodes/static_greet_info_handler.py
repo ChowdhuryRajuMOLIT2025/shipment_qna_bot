@@ -47,6 +47,10 @@ _OVERVIEW_HINTS = {
     "company",
     "who are you",
     "what is",
+    "stand for",
+    "full form",
+    "meaning",
+    "mean",
     "tell me about",
     "history",
     "vision",
@@ -196,6 +200,46 @@ def _contains_any(text: str, items: Iterable[str]) -> bool:
     return False
 
 
+def _looks_like_company_definition_query(
+    text: str, company_tokens: Iterable[str]
+) -> bool:
+    if not _contains_any(text, company_tokens):
+        return False
+
+    token_pattern = "|".join(
+        sorted(
+            {re.escape(t) for t in company_tokens if t and len(t) <= 40},
+            key=len,
+            reverse=True,
+        )
+    )
+    if not token_pattern:
+        return False
+
+    patterns = [
+        rf"\bwhat\s+does\s+(?:{token_pattern})\s+stand\s+for\b",
+        rf"\bwhat\s+is\s+the\s+full\s+form\s+of\s+(?:{token_pattern})\b",
+        rf"\bwhat\s+is\s+(?:{token_pattern})\b",
+        rf"\bwho\s+is\s+(?:{token_pattern})\b",
+        rf"\b(?:{token_pattern})\s+means?\b",
+        rf"\bmeaning\s+of\s+(?:{token_pattern})\b",
+    ]
+    return any(re.search(p, text) for p in patterns)
+
+
+def _looks_like_specific_shipment_lookup(text: str) -> bool:
+    if re.search(r"\b[a-z]{4}\d{7}\b", text):
+        return True
+    if re.search(
+        r"\b(container|po|booking|obl|bol)\s*(number|no|#)?\s*[:\-]?\s*[a-z0-9]{6,}\b",
+        text,
+    ):
+        return True
+    if re.search(r"\bstatus\s+of\s+\w+", text):
+        return True
+    return False
+
+
 def should_handle_overview(question: str) -> bool:
     lowered = (question or "").strip().lower()
     if not lowered:
@@ -212,6 +256,9 @@ def should_handle_overview(question: str) -> bool:
     if not has_company:
         return False
 
+    if _looks_like_company_definition_query(lowered, company_tokens):
+        return True
+
     has_overview_hint = _contains_any(lowered, _OVERVIEW_HINTS) or re.search(
         r"\b(what|who)\s+is\b", lowered
     )
@@ -219,7 +266,9 @@ def should_handle_overview(question: str) -> bool:
     if not has_overview_hint:
         return False
 
-    if _contains_any(lowered, _RETRIEVAL_HINTS):
+    if _contains_any(lowered, _RETRIEVAL_HINTS) and _looks_like_specific_shipment_lookup(
+        lowered
+    ):
         return False
 
     return True

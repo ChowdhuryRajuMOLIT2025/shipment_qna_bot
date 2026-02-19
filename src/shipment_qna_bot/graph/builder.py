@@ -153,6 +153,8 @@ def run_graph(input_state: dict) -> dict:
     input_state.setdefault("sub_intents", [])
     input_state.setdefault("sentiment", None)
     input_state.setdefault("reflection_feedback", None)
+    input_state.setdefault("analytics_attempt_count", None)
+    input_state.setdefault("analytics_last_error", None)
 
     # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage

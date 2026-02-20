@@ -64,3 +64,70 @@ Before writing any code, verify:
     - bar-chart request returns non-null `chart_spec`.
     - table still present for backward compatibility.
     - no change to `ChatAnswer` schema contract.
+
+## 5. MILESTONE CHECKLIST (Chart + Security, Added 2026-02-20)
+
+### Non-Negotiable Contract Lock
+- [ ] Keep `ChatAnswer.answer` unchanged as primary text response.
+- [ ] Keep existing response envelope keys unchanged (`conversation_id`, `intent`, `answer`, `notices`, `evidence`, `chart`, `table`, `metadata`).
+- [ ] Preserve frontend request payload shape (`question`, `conversation_id`, `consignee_codes`).
+- [ ] Do not break general/retrieval rendering behavior while adding chart support.
+
+### M0: Baseline + Rollback Anchor
+- [ ] Create and record git tag before implementation (`milestone/pre-chart-security-hardening`).
+- [ ] Capture baseline metrics from logs: p95 latency, token/cost outliers, analytics failure rate.
+- [ ] Store a short baseline report under `docs/` for comparison after rollout.
+- Expected impact: Safe rollback path and measurable progress tracking.
+
+### M1: Frontend Chart Rendering (No Contract Change)
+- [ ] Add `data.chart` rendering path in `src/shipment_qna_bot/static/index.html`.
+- [ ] Keep existing table rendering as fallback when `chart` is null.
+- [ ] Maintain current loader/table UX and avoid layout regression.
+- [ ] Add lightweight telemetry logs for "chart requested vs chart rendered".
+- Expected impact: User-visible charts without changing backend API contracts.
+
+### M2: Deterministic ChartSpec from Analytics
+- [ ] Implement chart-intent detection in `src/shipment_qna_bot/graph/nodes/analytics_planner.py`.
+- [ ] Generate declarative `chart_spec` only (no matplotlib/seaborn imports).
+- [ ] Keep `table_spec` present for backward compatibility.
+- [ ] Add guardrails so invalid chart data falls back to table/text only.
+- Expected impact: Bar/line/pie requests return renderable chart payload consistently.
+
+### M3: Identity + Scope Hardening (Fail-Closed)
+- [ ] Remove unsafe fallback that accepts payload scope when identity is missing in `src/shipment_qna_bot/security/scope.py`.
+- [ ] Enforce deny-by-default when identity or registry mapping is absent (except explicit controlled dev override).
+- [ ] Add explicit warning/notice for unauthorized scope attempts.
+- [ ] Add regression tests in `tests/test_rls.py` for missing-identity denial path.
+- Expected impact: Prevents unauthorized data access by payload spoofing.
+
+### M4: Frontend/HTTP Security Hardening
+- [ ] Sanitize markdown-rendered HTML before DOM insertion in `src/shipment_qna_bot/static/index.html`.
+- [ ] Add secure session/cookie settings in `src/shipment_qna_bot/api/main.py` (HTTPS, httponly, samesite in non-local env).
+- [ ] Add CORS/TrustedHost/HTTPS redirect policy by environment.
+- [ ] Add response security headers (CSP, X-Content-Type-Options, frame protections).
+- Expected impact: Reduces XSS/session abuse risk significantly.
+
+### M5: Analytics Execution Hardening
+- [ ] Replace unrestricted `exec` path in `src/shipment_qna_bot/tools/pandas_engine.py` with constrained execution strategy.
+- [ ] Restrict builtins and disallow filesystem/network/process access from generated code.
+- [ ] Add execution timeout/row limits and explicit abort messages.
+- [ ] Add tests for malicious payload attempts (imports, dunder abuse, file/system access).
+- Expected impact: Mitigates high-risk remote code execution vector.
+
+### M6: Cost/Performance Guardrails
+- [ ] Add token budget controls per request and per conversation.
+- [ ] Truncate excessive context payloads before answer generation.
+- [ ] Add circuit-breaker behavior for repeated judge retries on same query.
+- [ ] Track and alert on extreme token/cost requests in logs.
+- Expected impact: Lower latency/cost spikes and better reliability under heavy prompts.
+
+### M7: Validation + Release Gate
+- [ ] Run targeted tests:
+  - `pytest tests/test_route_chat.py`
+  - `pytest tests/test_schemas_chat.py`
+  - `pytest tests/test_rls.py`
+  - `pytest tests/test_hardening.py`
+  - `pytest tests/test_pandas_flow.py`
+- [ ] Run manual UAT script: chart request, retrieval request, clarification request, end-session request.
+- [ ] Compare post-change metrics against baseline and approve only if no contract break + security gates pass.
+- Expected impact: Controlled rollout with measurable quality and safety.

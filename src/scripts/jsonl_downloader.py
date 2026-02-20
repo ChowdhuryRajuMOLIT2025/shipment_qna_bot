@@ -96,7 +96,7 @@ def main() -> None:
     if scripts_dir not in sys.path:
         sys.path.append(scripts_dir)
 
-    from ingest_all import ingest_all
+    from ingest_all import ingest_all  # type: ignore
 
     ingest_all()
 

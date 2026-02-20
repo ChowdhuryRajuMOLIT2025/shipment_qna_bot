@@ -7,6 +7,7 @@
     <title>Shipment Q&A Bot</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <style>
         :root {
             --bg-color: #1a1a1a;
@@ -681,6 +682,15 @@
             });
         }
 
+        function ensureChartPluginsRegistered() {
+            if (typeof Chart === 'undefined') return;
+            if (window.__chartPluginsRegistered) return;
+            if (typeof ChartDataLabels !== 'undefined') {
+                Chart.register(ChartDataLabels);
+            }
+            window.__chartPluginsRegistered = true;
+        }
+
         function renderChart(chartSpec) {
             const wrapper = document.createElement('div');
             wrapper.className = 'chart-wrapper';
@@ -762,7 +772,7 @@
             ];
             const colors = labels.map((_, idx) => palette[idx % palette.length]);
 
-            new Chart(canvas, {
+            const chartConfig = {
                 type: kind,
                 data: {
                     labels,
@@ -783,6 +793,15 @@
                         legend: {
                             display: kind === 'pie',
                             labels: { color: '#e0e0e0' }
+                        },
+                        datalabels: {
+                            color: '#f8f8f8',
+                            font: { weight: '600' },
+                            anchor: kind === 'pie' ? 'center' : 'end',
+                            align: kind === 'pie' ? 'center' : 'top',
+                            offset: kind === 'pie' ? 0 : 2,
+                            clamp: true,
+                            formatter: (value) => `${value}`
                         }
                     },
                     scales: kind === 'pie' ? {} : {
@@ -796,6 +815,12 @@
                         }
                     }
                 }
+            };
+
+            // Build chart after the wrapper is attached to the DOM to avoid zero-size layout.
+            requestAnimationFrame(() => {
+                ensureChartPluginsRegistered();
+                new Chart(canvas, chartConfig);
             });
 
             return wrapper;

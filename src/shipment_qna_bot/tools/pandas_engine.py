@@ -29,10 +29,17 @@ class PandasAnalyticsEngine:
             "numpy": np,
             "json": json,
         }
-        self.allowed_import_roots = set() # NO IMPORTS ALLOWED AT RUNTIME
+        self.allowed_import_roots = set()  # NO IMPORTS ALLOWED AT RUNTIME
         self.forbidden_attrs = {
-            "__import__", "__builtins__", "eval", "exec", "open", 
-            "system", "subprocess", "globals", "locals"
+            "__import__",
+            "__builtins__",
+            "eval",
+            "exec",
+            "open",
+            "system",
+            "subprocess",
+            "globals",
+            "locals",
         }
 
     @staticmethod
@@ -76,7 +83,7 @@ class PandasAnalyticsEngine:
             def visit_Call(self, node):
                 if isinstance(node.func, ast.Name):
                     if node.func.id in self.forbidden_attrs:
-                         self.error = f"Function call '{node.func.id}' is forbidden."
+                        self.error = f"Function call '{node.func.id}' is forbidden."
                 self.generic_visit(node)
 
         visitor = SecurityVisitor(self.forbidden_attrs)
@@ -86,7 +93,7 @@ class PandasAnalyticsEngine:
 
         # Additional regex checks for things AST might miss in strings or edge cases
         if re.search(r"(__class__|__mro__|__subclasses__|__init__)", code):
-             return "Detected suspicious attribute access (dunder methods)."
+            return "Detected suspicious attribute access (dunder methods)."
 
         return None
 
@@ -189,14 +196,33 @@ class PandasAnalyticsEngine:
         try:
             # Create a restricted globals bridge
             # We explicitly pass our allowed modules into the local scope too
-            safe_globals = {"__builtins__": {
-                "print": print, "range": range, "len": len, "sum": sum, 
-                "min": min, "max": max, "abs": abs, "round": round, "list": list, 
-                "dict": dict, "set": set, "tuple": tuple, "str": str, "int": int, 
-                "float": float, "bool": bool, "enumerate": enumerate, "zip": zip,
-                "any": any, "all": all, "sorted": sorted, "getattr": getattr,
-            }}
-            
+            safe_globals = {
+                "__builtins__": {
+                    "print": print,
+                    "range": range,
+                    "len": len,
+                    "sum": sum,
+                    "min": min,
+                    "max": max,
+                    "abs": abs,
+                    "round": round,
+                    "list": list,
+                    "dict": dict,
+                    "set": set,
+                    "tuple": tuple,
+                    "str": str,
+                    "int": int,
+                    "float": float,
+                    "bool": bool,
+                    "enumerate": enumerate,
+                    "zip": zip,
+                    "any": any,
+                    "all": all,
+                    "sorted": sorted,
+                    "getattr": getattr,
+                }
+            }
+
             with contextlib.redirect_stdout(output_buffer):
                 # exec with timeout (simulated as we can't easily kill thread in pure python without signals)
                 # For now, we use a simple try/except and reliance on AST + limited builtins.

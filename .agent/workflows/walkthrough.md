@@ -4,8 +4,11 @@ The Shipment QnA Bot has been significantly hardened. We addressed critical secu
 
 ## Security Hardening
 - **RCE Mitigation**: The `PandasAnalyticsEngine` now uses AST analysis to block all imports, dunder methods, and unauthorized attribute access before execution. The `exec()` environment is restricted to a small whitelist of builtins.
-- **Identity Enforcement (Fail-Closed)**: Removed the unsafe fallback in `scope.py`. The system now denies access by default if a user identity is missing or cannot be verified.
+- **Identity Enforcement**:
+    - Initially: Implemented "Fail-Closed" logic in `scope.py` to deny access if user identity was missing.
+    - Updated: Per infra context (VPN, firewall), identity scope enforcement was relaxed to trust external authentication, simplifying integration while maintaining RCE mitigations.
 - **API Security Headers**: Added `SecurityHeadersMiddleware` to `main.py` adding CSP, X-Frame-Options, and nosniff protections.
+
 - **Persistent Sessions**: Moved session secret management away from transient instance IDs to persistent environment variables.
 
 ## Logic Improvements

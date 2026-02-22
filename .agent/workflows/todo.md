@@ -16,3 +16,5 @@
     - [x] Build comprehensive test suite
     - [x] Double-check all edge cases
     - [x] Final Walkthrough and RCA
+    - [x] Security Policy Adjustment: Relaxed identity scope enforcement for VPN/Firewall environments
+

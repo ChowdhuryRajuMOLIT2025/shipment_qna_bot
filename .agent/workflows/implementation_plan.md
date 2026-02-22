@@ -61,8 +61,10 @@ graph LR
 - [x] Add security headers (CSP, X-Content-Type-Options, Frame protection).
 
 - [x] [MODIFY] [scope.py](file:///Users/m1air/Desktop/MCS_ChatBot/src/shipment_qna_bot/security/scope.py)
-- [x] Remove the "missing user identity" fallback that trusts the payload.
+- [x] Removed the "missing user identity" fallback that trusts the payload (Initial Hardening).
+- [x] **ADJUSTMENT**: Relaxed identity scope enforcement to accommodate infrastructure-level (VPN/Firewall) authentication.
 - [x] Enforce strict registry matching.
+
 
 ---
 

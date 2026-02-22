@@ -114,9 +114,21 @@ Error:
 def _wants_chart(question: str) -> bool:
     lowered = (question or "").lower()
     chart_terms = [
-        "chart", "graph", "plot", "bar", "line", "pie", 
-        "trend", "visualize", "visualise", "distribution",
-        "breakdown", "by carrier", "by port", "top 5", "top 10"
+        "chart",
+        "graph",
+        "plot",
+        "bar",
+        "line",
+        "pie",
+        "trend",
+        "visualize",
+        "visualise",
+        "distribution",
+        "breakdown",
+        "by carrier",
+        "by port",
+        "top 5",
+        "top 10",
     ]
     return any(term in lowered for term in chart_terms)
 
@@ -291,11 +303,11 @@ def _build_chart_spec_from_table(
 
     # Heuristic for grouping: If x_col is a date, ensure it's sorted
     if "date" in x_col.lower() or "eta" in x_col.lower() or "ata" in x_col.lower():
-         # Sort data points for line charts
-         try:
-             chart_data.sort(key=lambda x: str(x.get(x_col)))
-         except:
-             pass
+        # Sort data points for line charts
+        try:
+            chart_data.sort(key=lambda x: str(x.get(x_col)))
+        except:
+            pass
 
     if not chart_data:
         return None
@@ -332,7 +344,9 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         # 0. Safety Check
         if not consignee_codes:
-            state["answer_text"] = "No consignee codes provided. Please select at least one code to view data."
+            state["answer_text"] = (
+                "No consignee codes provided. Please select at least one code to view data."
+            )
             state["is_satisfied"] = True
             return state
 

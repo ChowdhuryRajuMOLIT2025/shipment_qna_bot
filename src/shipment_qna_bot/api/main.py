@@ -31,6 +31,7 @@ app.add_middleware(RequestLoggingMiddleware)
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         response: Response = await call_next(request)
@@ -45,22 +46,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "img-src 'self' data:; "
             "media-src 'self' data:;"
         )
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
         return response
+
 
 app.add_middleware(SecurityHeadersMiddleware)
 
 # CORS Middleware (Restrict as needed)
 from fastapi.middleware.cors import CORSMiddleware
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Tighten this in production
+    allow_origins=["*"],  # Tighten this in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Session middleware for backend-driven persistence
 from starlette.middleware.sessions import SessionMiddleware
+
 app.add_middleware(SessionMiddleware, secret_key=_SESSION_SECRET)
 
 # Mount static files

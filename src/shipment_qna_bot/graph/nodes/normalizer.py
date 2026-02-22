@@ -254,10 +254,12 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
         # Praise/Feedback Guardrail (Issue A)
         praise_patterns = [
             r"^(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)[\s\d!.]*$",
-            r"^(no|nothing|that's it|all set|i'm good|no thanks)[\s.]*$"
+            r"^(no|nothing|that's it|all set|i'm good|no thanks)[\s.]*$",
         ]
         if any(re.search(p, question.lower()) for p in praise_patterns):
-            logger.info("Normalizer: Bypassing LLM rewrite for praise/acknowledgment message.")
+            logger.info(
+                "Normalizer: Bypassing LLM rewrite for praise/acknowledgment message."
+            )
             state["normalized_question"] = question.lower()
             state["topic_shift_candidate"] = None
             return state

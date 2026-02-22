@@ -1,46 +1,67 @@
-# Shipment QnA Bot
+# Shipment Q&A Chatbot (Hardened Edition)
 
-A production-ready Shipment Q&A chatbot using **LangGraph**, **Azure AI Search**, and **FastAPI**.
-
-## Key Features
-*   **LangGraph Orchestration**: Deterministic workflows with "Time Travel" debugging capabilities.
-*   **Strict RLS**: Row-Level Security enforced at the application level (Parent sees Children, Child sees only self).
-*   **Hybrid Retrieval**: Azure AI Search (BM25 + Vector) with mandatory RLS filters.
-*   **Durable Execution**: Uses `MemorySaver` (In-Memory) for session continuity, ready for Postgres.
-*   **Observability**: Structured JSON logging with `trace_id` and graph execution tracing.
+A high-performance, security-first Shipment Q&A system built with **LangGraph**, **FastAPI**, and **Azure AI Search**. This version features advanced "Bring Your Own Data" (BYOD) analytics and AST-based security hardening.
 
 ---
 
-## Folder Structure
+## 🏗️ Architecture Overview
+
+The system utilizes a multi-agent orchestration pattern via **LangGraph** to handle complex logistics queries:
+
+- **Intent Detection**: Advanced classification with praise-guardrails to maintain session continuity.
+- **Hybrid Retrieval**: BM25 and Vector search integration via Azure AI Search with enforced Row-Level Security (RLS).
+- **Hardened Analytics (BYOD)**: Dynamic analysis of Parquet/CSV datasets using a constrained AST-parsed Pandas engine.
+- **Response Synthesis**: Context-aware answering with integrated data visualization (Bar/Line charts).
+
+## 🔒 Security Posture
+
+- **AST-Based RCE Mitigation**: Analytics queries are parsed into Abstract Syntax Trees (AST) to whitelist safe operations and block dangerous functions (`__import__`, `exec`, `eval`), providing a robust sandbox for dynamic code execution.
+- **Identity Awareness**: Flexible identity scope resolution designed for VPN/Firewall deployments, balancing infrastructure-level trust with application-level authorization.
+- **Secure API**: Hardened FastAPI implementation with CSP, HSTS, and Frame projection headers.
+- **Persistent Sessions**: Reliable session management using environment-backed encryption keys.
+
+## 📂 Project Structure
 
 ```text
 shipment_qna_bot/
-├─ docs/                 
-├─ src/
-│  └─ shipment_qna_bot/
-│     ├─ logging/---log  # Observability (Logger, Middleware, Tracing)
-|     ├─ models/         
-│     ├─ security/       # RLS & Scope Resolution
-│     ├─ graph/          # LangGraph Workflow (State, Nodes, Builder)
-│     ├─ tools/          # Azure Search, OpenAI, SQL tools
-│     ├─ api/            # FastAPI Routes
-│     └─ static-ui/      # Streamlit Demo
-└─ tests/                # Unit & Integration Tests
+├── .agent/workflows/       # Agentic development continuity & RCA logs
+├── data/                    # Local dataset samples (Parquet/CSV)
+├── src/shipment_qna_bot/
+│   ├── api/                 # FastAPI routes and middleware
+│   ├── graph/               # LangGraph state machine & node logic
+│   │   ├── nodes/           # Intent, Retrieval, Analytics, Answer nodes
+│   ├── security/            # RLS & Scope resolution logic
+│   ├── tools/               # Azure Search, Pandas Engine, OpenAI clients
+│   ├── logging/             # Structured JSON observability
+│   └── models/              # Pydantic schemas and state definitions
+├── tests/                   # Security, Logic, and Performance test suites
+└── requirements.txt         # Project dependencies
 ```
 
----
+## 🚀 Getting Started
 
-## Progress
-- [x] **Phase 0: Observability**: Structured logging and graph tracing implemented.
-- [x] **Phase 1: Security**: RLS scope resolution and filter building implemented & verified.
-- [x] **Phase 2: Core Graph**: Implementing State, Nodes, and Workflow.
-- [x] **Phase 3: Retrieval**: Connecting to Azure AI Search.
-- [x] **Phase 4: API**: Exposing endpoints.
+### Prerequisites
+- Python 3.10+
+- Azure AI Search Service
+- Azure OpenAI / OpenAI API Key
+
+### Installation & Execution
+1. **Clone & Install**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Environment Setup**:
+   Configure `.env` with required Azure/OpenAI credentials and `SESSION_SECRET_KEY`.
+3. **Run Server**:
+   ```bash
+   uvicorn src.shipment_qna_bot.api.main:app --reload
+   ```
+
+## 🛠️ Development & Support
+The project uses automated formatting and linting:
+- **Formatter**: `black`
+- **Import Sort**: `isort`
+- **Linting**: `flake8` / `pylint` (recommended)
 
 ---
-
-## Getting Started
-1.  **Install dependencies**: `pip install -r requirements.txt`
-2.  **Run Tests**: `pytest`
-3.  **Run App**: `uvicorn shipment_qna_bot.api.main:app --reload`
----
+*Maintained for MOLIT Shipments Project.*

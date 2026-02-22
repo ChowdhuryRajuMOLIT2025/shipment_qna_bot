@@ -54,7 +54,7 @@ shipment_qna_bot/
    Configure `.env` with required Azure/OpenAI credentials and `SESSION_SECRET_KEY`.
 3. **Run Server**:
    ```bash
-   uvicorn src.shipment_qna_bot.api.main:app --reload
+   uv run uvicorn shipment_qna_bot.api.main:app --reload --host=127.0.0.1 --port=8000
    ```
 
 ## 🛠️ Development & Support

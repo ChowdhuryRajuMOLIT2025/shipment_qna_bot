@@ -1,6 +1,6 @@
 """
 Centralized metadata for shipment analytics.
-This file defines the schema, types, and descriptions used for both 
+This file defines the schema, types, and descriptions used for both
 data type casting and LLM dynamic prompt generation.
 """
 

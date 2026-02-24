@@ -1,8 +1,9 @@
 import contextlib
 import io
 import json
+import re
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,52 @@ class PandasAnalyticsEngine:
             "numpy": np,
             "json": json,
         }
+        self.allowed_import_roots = {"pandas", "numpy", "json"}
+
+    @staticmethod
+    def _strip_code_fences(code: str) -> str:
+        cleaned = (code or "").strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:python)?\s*", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+        return cleaned.strip()
+
+    def _preflight_validate_code(self, code: str) -> Optional[str]:
+        import_matches = re.findall(
+            r"^\s*(?:from|import)\s+([a-zA-Z_][a-zA-Z0-9_\.]*)",
+            code,
+            flags=re.MULTILINE,
+        )
+        for module_name in import_matches:
+            root = module_name.split(".")[0].lower()
+            if root not in self.allowed_import_roots:
+                return (
+                    f"Import '{module_name}' is not allowed in analytics execution. "
+                    "Use only pandas/numpy/json."
+                )
+
+        date_literals = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", code)
+        for token in date_literals:
+            try:
+                pd.Timestamp(token)
+            except Exception:
+                return (
+                    f"Invalid date literal '{token}'. "
+                    "Please use a valid calendar date."
+                )
+
+        for var in re.findall(r"\bif\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:", code):
+            if var in {"df", "df_filtered", "result"} or var.endswith("_df"):
+                return (
+                    f"Ambiguous truth-value check on '{var}'. "
+                    "Use explicit checks like `.empty`, `.any()`, or `.all()`."
+                )
+        return None
+
+    @staticmethod
+    def _extract_str_columns(code: str) -> List[str]:
+        cols = re.findall(r"\[['\"]([^'\"]+)['\"]\]\.str\.", code)
+        return list(dict.fromkeys(cols))
 
     @staticmethod
     def _sort_df_latest_first(df_in: pd.DataFrame) -> pd.DataFrame:
@@ -67,15 +114,33 @@ class PandasAnalyticsEngine:
             - 'error': Error message if failed
             - 'success': Bool
         """
+        code = self._strip_code_fences(code)
         logger.info(f"Pandas Engine executing code on DF with shape {df.shape}")
         logger.info(f"Pandas Code:\n{code}")
+
+        preflight_error = self._preflight_validate_code(code)
+        if preflight_error:
+            logger.warning("Pandas preflight validation failed: %s", preflight_error)
+            return {
+                "success": False,
+                "error": preflight_error,
+                "output": "",
+            }
 
         # Trap stdout
         output_buffer = io.StringIO()
 
+        working_df = df.copy()
+        for col in self._extract_str_columns(code):
+            if col not in working_df.columns:
+                continue
+            series = working_df[col]
+            if not pd.api.types.is_string_dtype(series):
+                working_df[col] = series.astype("string")
+
         # Execution context
         local_scope = {
-            "df": df,
+            "df": working_df,
             "pd": pd,
             "np": np,
             "json": json,
@@ -94,10 +159,12 @@ class PandasAnalyticsEngine:
 
             filtered_rows = None
             filtered_preview = ""
+            filtered_dataframe: Optional[pd.DataFrame] = None
             df_filtered = local_scope.get("df_filtered")
             if isinstance(df_filtered, pd.DataFrame):
                 df_filtered = self._sort_df_latest_first(df_filtered)
                 local_scope["df_filtered"] = df_filtered
+                filtered_dataframe = df_filtered
                 filtered_rows = len(df_filtered)
                 if filtered_rows > 0:
                     preferred_cols = [
@@ -121,6 +188,7 @@ class PandasAnalyticsEngine:
 
             # If result is a dataframe or series, convert to something json-serializable/string
             # for the agent to consume easily
+            result_dataframe: Optional[pd.DataFrame] = None
             if isinstance(result_val, (pd.DataFrame, pd.Series)):
                 if result_val.empty:
                     return {
@@ -128,9 +196,16 @@ class PandasAnalyticsEngine:
                         "output": output_buffer.getvalue(),
                         "result": "",
                         "final_answer": "No rows matched your filters.",
+                        "filtered_rows": filtered_rows,
+                        "filtered_preview": filtered_preview,
+                        "filtered_dataframe": filtered_dataframe,
+                        "result_dataframe": (
+                            result_val if isinstance(result_val, pd.DataFrame) else None
+                        ),
                     }
                 if isinstance(result_val, pd.DataFrame):
                     result_val = self._sort_df_latest_first(result_val)
+                    result_dataframe = result_val
                 result_export = result_val.to_markdown()
             else:
                 result_export = str(result_val) if result_val is not None else ""
@@ -146,6 +221,8 @@ class PandasAnalyticsEngine:
                 "result_type": result_type,
                 "filtered_rows": filtered_rows,
                 "filtered_preview": filtered_preview,
+                "filtered_dataframe": filtered_dataframe,
+                "result_dataframe": result_dataframe,
             }
 
         except Exception as e:

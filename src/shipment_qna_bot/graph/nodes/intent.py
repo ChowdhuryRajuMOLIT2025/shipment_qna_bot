@@ -1,3 +1,5 @@
+import re
+
 from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
@@ -18,6 +20,41 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
     return _chat_tool
 
 
+def _has_extracted_ids(state: GraphState) -> bool:
+    extracted = state.get("extracted_ids") or {}
+    if not isinstance(extracted, dict):
+        return False
+    for key in ("container_number", "po_numbers", "booking_numbers", "obl_nos"):
+        vals = extracted.get(key)
+        if isinstance(vals, list) and any(str(v).strip() for v in vals):
+            return True
+    return False
+
+
+def _looks_like_association_analytics_query(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+
+    analytics_markers = {"analyze", "analyse", "analysis", "analytics"}
+    assoc_markers = {
+        "associated",
+        "association",
+        "related",
+        "linked",
+        "mapping",
+        "mapped",
+        "corresponding",
+    }
+
+    has_analytics_marker = any(m in lowered for m in analytics_markers)
+    has_assoc_marker = any(m in lowered for m in assoc_markers)
+    has_lookup_object = bool(
+        re.search(r"\b(container|containers|po|po number|booking|obl|bol)\b", lowered)
+    )
+    return has_analytics_marker and has_assoc_marker and has_lookup_object
+
+
 def intent_node(state: GraphState) -> GraphState:
     """
     Classifies the user's intent using LLM.
@@ -27,12 +64,30 @@ def intent_node(state: GraphState) -> GraphState:
         {"question": (state.get("normalized_question") or "")[:120]},
         state_ref=state,
     ):
-        text = state.get("normalized_question", "")
+        text = (state.get("normalized_question") or "").strip()
+        raw_text = (state.get("question_raw") or "").strip()
         if not text:
             state["intent"] = "end"
             return state
 
-        if should_handle_overview(text):
+        overview_source = None
+        if raw_text and should_handle_overview(raw_text):
+            overview_source = "raw"
+        elif should_handle_overview(text):
+            overview_source = "normalized"
+
+        if overview_source:
+            logger.info(
+                "Intent forced to company_overview by overview gate",
+                extra={
+                    "extra_data": {
+                        "source": overview_source,
+                        "text_snippet": (
+                            raw_text if overview_source == "raw" else text
+                        )[:80],
+                    }
+                },
+            )
             usage_metadata = state.get("usage_metadata") or {
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
@@ -42,6 +97,52 @@ def intent_node(state: GraphState) -> GraphState:
                 {
                     "intent": "company_overview",
                     "sub_intents": ["company_overview"],
+                    "sentiment": "neutral",
+                    "usage_metadata": usage_metadata,
+                }
+            )
+            return state
+
+        usage_metadata = state.get("usage_metadata") or {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+        analytics_scope_mode = state.get("analytics_context_mode")
+        if analytics_scope_mode in {"session", "previous_result"} or state.get(
+            "analytics_scope_candidate"
+        ):
+            logger.info(
+                "Intent forced to analytics by analytics follow-up scope context",
+                extra={
+                    "extra_data": {
+                        "analytics_context_mode": analytics_scope_mode,
+                        "has_scope_candidate": bool(
+                            state.get("analytics_scope_candidate")
+                        ),
+                    }
+                },
+            )
+            state.update(
+                {
+                    "intent": "analytics",
+                    "sub_intents": ["analytics"],
+                    "sentiment": "neutral",
+                    "usage_metadata": usage_metadata,
+                }
+            )
+            return state
+
+        if _looks_like_association_analytics_query(text) and _has_extracted_ids(state):
+            logger.info(
+                "Intent forced to analytics by association-analysis rule",
+                extra={"extra_data": {"text_snippet": text[:120]}},
+            )
+            state.update(
+                {
+                    "intent": "analytics",
+                    "sub_intents": ["analytics", "association_lookup"],
                     "sentiment": "neutral",
                     "usage_metadata": usage_metadata,
                 }
@@ -110,7 +211,6 @@ def intent_node(state: GraphState) -> GraphState:
             return state
 
         import json
-        import re
 
         system_prompt = (
             "You are an intent classifier for a Logistics Shipment Q&A Bot.\n"
@@ -144,11 +244,6 @@ def intent_node(state: GraphState) -> GraphState:
             usage = response["usage"]
 
             # Accumulate usage
-            usage_metadata = state.get("usage_metadata") or {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0,
-            }
             for k in usage:
                 usage_metadata[k] = usage_metadata.get(k, 0) + usage[k]
 

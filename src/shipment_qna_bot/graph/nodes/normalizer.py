@@ -41,6 +41,10 @@ _ANAPHORA_TOKENS = {
 _CONTROL_REPLIES = {
     "1",
     "2",
+    "option 1",
+    "option 2",
+    "choice 1",
+    "choice 2",
     "a",
     "b",
     "use previous",
@@ -53,6 +57,66 @@ _CONTROL_REPLIES = {
     "ignore",
     "ignore previous",
     "ignore previous context",
+    "previous result",
+    "previous list",
+    "above list",
+    "session scope",
+    "all shipments",
+    "full scope",
+}
+
+_COMPANY_QUERY_TOKENS = {
+    "mcs",
+    "mol",
+    "mol consolidation",
+    "mol consolidation service",
+    "starlink",
+    "mitsui osk",
+}
+
+_COMPANY_INTENT_HINTS = {
+    "what is",
+    "who is",
+    "stand for",
+    "full form",
+    "mean",
+    "meaning",
+    "about",
+    "history",
+    "vision",
+    "mission",
+    "ceo",
+    "office",
+    "services",
+}
+
+_PREVIOUS_RESULT_SCOPE_HINTS = {
+    "from above",
+    "from the above",
+    "above list",
+    "above results",
+    "from above list",
+    "from previous result",
+    "from previous results",
+    "from previous list",
+    "among those",
+    "among them",
+    "among above",
+    "from that list",
+    "from those",
+    "from these",
+    "of the above",
+}
+
+_SESSION_SCOPE_HINTS = {
+    "all shipments",
+    "all my shipments",
+    "overall",
+    "across all shipments",
+    "full scope",
+    "session scope",
+    "whole dataset",
+    "entire dataset",
 }
 
 
@@ -105,16 +169,185 @@ def _strip_new_topic_prefix(text: str) -> Tuple[str, bool]:
 
 def _parse_topic_shift_choice(text: str) -> Optional[str]:
     lowered = (text or "").strip().lower()
-    if lowered in {"1", "a", "use previous", "use previous context", "use context"}:
+    if lowered in {
+        "1",
+        "a",
+        "option 1",
+        "choice 1",
+        "use previous",
+        "use previous context",
+        "use context",
+    }:
         return "use_previous"
-    if lowered in {"2", "b", "new", "new topic", "ignore", "ignore previous"}:
+    if lowered in {
+        "2",
+        "b",
+        "option 2",
+        "choice 2",
+        "new",
+        "new topic",
+        "ignore",
+        "ignore previous",
+    }:
         return "new_topic"
+    return None
+
+
+def _parse_analytics_scope_choice(text: str) -> Optional[str]:
+    lowered = (text or "").strip().lower()
+    if lowered in {
+        "1",
+        "a",
+        "option 1",
+        "choice 1",
+        "previous",
+        "previous result",
+        "previous list",
+        "above list",
+        "use previous",
+        "use previous result",
+        "use above list",
+    }:
+        return "previous_result"
+    if lowered in {
+        "2",
+        "b",
+        "option 2",
+        "choice 2",
+        "session",
+        "session scope",
+        "all",
+        "all shipments",
+        "full scope",
+        "use session scope",
+        "use all shipments",
+    }:
+        return "session"
     return None
 
 
 def _is_control_reply(text: str) -> bool:
     lowered = (text or "").strip().lower()
     return lowered in _CONTROL_REPLIES
+
+
+def _looks_like_specific_lookup(text: str) -> bool:
+    lowered = (text or "").lower()
+    if re.search(r"\b[a-z]{4}\d{7}\b", lowered):
+        return True
+    if re.search(r"\b\d{6,}\b", lowered) and re.search(
+        r"\b(container|po|booking|obl|bol)\b", lowered
+    ):
+        return True
+    return False
+
+
+def _looks_like_company_fact_question(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered or _looks_like_specific_lookup(lowered):
+        return False
+    if not any(token in lowered for token in _COMPANY_QUERY_TOKENS):
+        return False
+    return any(hint in lowered for hint in _COMPANY_INTENT_HINTS)
+
+
+def _has_previous_analytics_subset(state: GraphState) -> bool:
+    selector = state.get("last_analytics_result_selector")
+    if not isinstance(selector, dict):
+        return False
+    ids = selector.get("ids")
+    if isinstance(ids, dict):
+        for values in ids.values():
+            if isinstance(values, list) and values:
+                return True
+    count = selector.get("row_count")
+    return isinstance(count, int) and count > 0
+
+
+def _mentions_previous_result_scope(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+    if any(h in lowered for h in _PREVIOUS_RESULT_SCOPE_HINTS):
+        return True
+    return bool(re.search(r"\b(above|previous)\s+(list|result|results)\b", lowered))
+
+
+def _mentions_session_scope(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+    return any(h in lowered for h in _SESSION_SCOPE_HINTS)
+
+
+def _looks_like_ambiguous_analytics_followup(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    if not lowered:
+        return False
+    if _looks_like_specific_lookup(lowered):
+        return False
+    if _contains_time_window(lowered):
+        return False
+    if _mentions_previous_result_scope(lowered) or _mentions_session_scope(lowered):
+        return False
+
+    keywords = {
+        "hot",
+        "priority",
+        "delay",
+        "delayed",
+        "status",
+        "eta",
+        "ata",
+        "carrier",
+        "vessel",
+        "port",
+        "shipment",
+        "shipments",
+    }
+    if not any(k in lowered for k in keywords):
+        return False
+
+    if _has_anaphora(lowered):
+        return True
+
+    # Short follow-ups like "which are hot?" are ambiguous after a list/table result.
+    words = re.findall(r"\b\w+\b", lowered)
+    starters = {"which", "what", "show", "list", "count", "give", "how"}
+    if words and words[0] in starters and len(words) <= 8:
+        return True
+    return False
+
+
+def _build_analytics_scope_candidate(
+    raw_question: str, normalized_question: str, state: GraphState
+) -> Optional[Dict[str, Any]]:
+    if not _has_previous_analytics_subset(state):
+        return None
+
+    raw_q = (raw_question or "").strip()
+    norm_q = (normalized_question or "").strip()
+    if not raw_q and not norm_q:
+        return None
+
+    prev_count = state.get("last_analytics_result_count")
+
+    if _mentions_previous_result_scope(raw_q) or _mentions_previous_result_scope(
+        norm_q
+    ):
+        return None
+
+    if _mentions_session_scope(raw_q) or _mentions_session_scope(norm_q):
+        return None
+
+    if not _looks_like_ambiguous_analytics_followup(raw_q):
+        return None
+
+    return {
+        "raw_question": raw_q or norm_q,
+        "normalized_question": norm_q or raw_q.lower(),
+        "previous_result_count": prev_count,
+    }
 
 
 def _topic_shift_candidate(
@@ -152,6 +385,23 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
         {"question": (state.get("question_raw") or "")[:120]},
         state_ref=state,
     ):
+
+        def _apply_analytics_scope_flags(raw_q: str, normalized_q: str) -> None:
+            state["analytics_scope_candidate"] = None
+            state["analytics_context_mode"] = None
+            if _mentions_previous_result_scope(
+                raw_q
+            ) or _mentions_previous_result_scope(normalized_q):
+                if _has_previous_analytics_subset(state):
+                    state["analytics_context_mode"] = "previous_result"
+                return
+            if _mentions_session_scope(raw_q) or _mentions_session_scope(normalized_q):
+                state["analytics_context_mode"] = "session"
+                return
+            state["analytics_scope_candidate"] = _build_analytics_scope_candidate(
+                raw_q, normalized_q, state
+            )
+
         question = (state.get("question_raw") or "").strip()
         question, forced_new_topic = _strip_new_topic_prefix(question)
         if forced_new_topic:
@@ -185,15 +435,55 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
             if not _is_control_reply(question):
                 state["pending_topic_shift"] = None
 
+        pending_analytics_scope = state.get("pending_analytics_scope")
+        if pending_analytics_scope:
+            scope_choice = _parse_analytics_scope_choice(question)
+            if scope_choice:
+                chosen_raw = (
+                    pending_analytics_scope.get("question_raw") or question
+                ).strip()
+                chosen_normalized = (
+                    pending_analytics_scope.get("normalized_question")
+                    or chosen_raw.lower()
+                ).strip()
+                state["question_raw"] = chosen_raw
+                state["normalized_question"] = chosen_normalized
+                state["analytics_context_mode"] = scope_choice
+                state["pending_analytics_scope"] = None
+                state["analytics_scope_candidate"] = None
+                state.setdefault("messages", []).append(
+                    HumanMessage(content=chosen_raw)
+                )
+                logger.info(
+                    "Applied analytics scope choice: %s",
+                    scope_choice,
+                    extra={"extra_data": {"chosen": chosen_raw[:120]}},
+                )
+                return state
+
+            if not _is_control_reply(question):
+                state["pending_analytics_scope"] = None
+
         if is_test_mode() or forced_new_topic:
-            state["normalized_question"] = question.lower()
+            normalized_q = question.lower()
+            state["normalized_question"] = normalized_q
             state["topic_shift_candidate"] = None
+            _apply_analytics_scope_flags(question, normalized_q)
+            return state
+
+        if _looks_like_company_fact_question(question):
+            normalized_q = question.lower()
+            state["normalized_question"] = normalized_q
+            state["topic_shift_candidate"] = None
+            _apply_analytics_scope_flags(question, normalized_q)
             return state
 
         # If there is no history or only one message (the current one), just return the lowercase question
         if len(history) <= 1:
-            state["normalized_question"] = question.lower()
+            normalized_q = question.lower()
+            state["normalized_question"] = normalized_q
             state["topic_shift_candidate"] = None
+            _apply_analytics_scope_flags(question, normalized_q)
             return state
 
         # Prompt for co-reference resolution
@@ -260,4 +550,5 @@ Guidelines:
         state["normalized_question"] = normalized
         state["usage_metadata"] = usage_metadata
         state["topic_shift_candidate"] = candidate
+        _apply_analytics_scope_flags(question, normalized)
         return state

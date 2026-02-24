@@ -114,6 +114,8 @@ def _summarize_state(state: Dict[str, Any]) -> Dict[str, Any]:
             else None
         ),
         "pending_topic_shift": True if pending_topic_shift else False,
+        "analytics_attempt_count": state.get("analytics_attempt_count"),
+        "analytics_last_error": _truncate(state.get("analytics_last_error"), limit=120),
     }
 
 

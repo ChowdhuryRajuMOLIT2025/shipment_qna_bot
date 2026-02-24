@@ -66,6 +66,14 @@ class GraphState(TypedDict):
     reflection_feedback: Optional[str]
     pending_topic_shift: Optional[Dict[str, Any]]
     topic_shift_candidate: Optional[Dict[str, Any]]
+    pending_analytics_scope: Optional[Dict[str, Any]]
+    analytics_scope_candidate: Optional[Dict[str, Any]]
+    analytics_context_mode: Optional[str]  # "session" | "previous_result"
+    last_analytics_result_selector: Optional[Dict[str, Any]]
+    last_analytics_result_count: Optional[int]
+    last_analytics_question: Optional[str]
+    analytics_attempt_count: Optional[int]
+    analytics_last_error: Optional[str]
 
     # --- Metrics ---
     usage_metadata: Dict[

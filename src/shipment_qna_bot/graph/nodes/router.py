@@ -14,7 +14,9 @@ def route_node(
 
     if intent == "company_overview":
         return "static_info"
-    if intent == "analytics" and state.get("topic_shift_candidate"):
+    if intent == "analytics" and (
+        state.get("topic_shift_candidate") or state.get("analytics_scope_candidate")
+    ):
         return "clarification"
     if intent == "analytics":
         return "analytics"

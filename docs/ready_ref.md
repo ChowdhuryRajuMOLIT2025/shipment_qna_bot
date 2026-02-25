@@ -20,6 +20,7 @@ This file serves as a **Ready Reference** for the LLM to understand the dataset 
 
 | Column Name | Type | Description |
 | :--- | :--- | :--- |
+| `job_no` | string | The job number associated with container. |
 | `container_number` | string | The unique 11-character container identifier. |
 | `container_type` | categorical | Definition for container type. (e.g., 'S4' = 40' Flat Rack, 'D4' = 40' Dry) |
 | `destination_service` | categorical | Definition for destination service. |
@@ -111,7 +112,7 @@ This file serves as a **Ready Reference** for the LLM to understand the dataset 
 | `vessel_summary` | string | Definition for vessel summary. |
 | `carrier_summary` | string | Definition for carrier summary. |
 | `port_route_summary` | string | Definition for port route summary. |
-| `source_group` | categorical | Definition for source group. |
+<!-- | `source_group` | categorical | Definition for source group. | -->
 
 
 
@@ -127,14 +128,21 @@ This file serves as a **Ready Reference** for the LLM to understand the dataset 
 **Pandas Code:**
 ```python
 # Filter for delays > 0
-df_filtered = df[df['dp_delayed_dur'] > 0].copy()
+# df_filtered = df[df['dp_delayed_dur'] > 0].copy()
+df_filtered = df[df['dp_delayed_dur'] > 0]
 
 # Format Default Date Column
 if 'best_eta_dp_date' in df_filtered.columns:
     df_filtered['best_eta_dp_date'] = df_filtered['best_eta_dp_date'].dt.strftime('%d-%b-%Y')
 
 # Select Output Columns
-result = df_filtered[['container_number', 'po_numbers', 'best_eta_dp_date', 'dp_delayed_dur', 'shipment_status']]
+result = df_filtered[[
+    'container_number', 
+    # 'po_numbers', 
+    'best_eta_dp_date', 
+    'dp_delayed_dur', 
+    'shipment_status'
+    ]]
 ```
 
 ### Scenario B: Final Destination (FD) Delays
@@ -147,14 +155,21 @@ result = df_filtered[['container_number', 'po_numbers', 'best_eta_dp_date', 'dp_
 **Pandas Code:**
 ```python
 # Filter for FD delays > 0
-df_filtered = df[df['fd_delayed_dur'] > 0].copy()
+# df_filtered = df[df['fd_delayed_dur'] > 0].copy()
+df_filtered = df[df['fd_delayed_dur'] > 0]
 
 # Format FD Date Column
 if 'best_eta_fd_date' in df_filtered.columns:
     df_filtered['best_eta_fd_date'] = df_filtered['best_eta_fd_date'].dt.strftime('%d-%b-%Y')
 
 # Select Output Columns
-result = df_filtered[['container_number', 'po_numbers', 'best_eta_fd_date', 'fd_delayed_dur', 'final_destination']]
+result = df_filtered[[
+    'container_number', 
+    # 'po_numbers', 
+    'best_eta_fd_date', 
+    'fd_delayed_dur', 
+    'final_destination'
+    ]]
 ```
 
 ### Scenario C: Hot / Priority Shipments
@@ -166,10 +181,16 @@ result = df_filtered[['container_number', 'po_numbers', 'best_eta_fd_date', 'fd_
 **Pandas Code:**
 ```python
 # Filter for Hot Containers
-df_filtered = df[df['hot_container_flag'] == True].copy()
+# df_filtered = df[df['hot_container_flag'] == True].copy()
+df_filtered = df[df['hot_container_flag'] == True]
 
 # Select Output Columns
-result = df_filtered[['container_number','po_numbers', 'hot_container_flag', 'shipment_status', 'best_eta_dp_date']]
+result = df_filtered[[
+    'container_number',
+    # 'po_numbers', 
+    'hot_container_flag', 
+    'shipment_status', 
+    'best_eta_dp_date']]
 ```
 
 ### Scenario D: Delivered Shipments to Consignee (Final Destination)
@@ -185,11 +206,19 @@ result = df_filtered[['container_number','po_numbers', 'hot_container_flag', 'sh
 # Shipment reached DP (before today) and delivered to consignee
 today = pd.Timestamp.today().normalize()
 
+# df_filtered = df[
+#     df['best_eta_dp_date'].notna() &
+#     (df['best_eta_dp_date'] < today) &
+#     (df['delivery_to_consignee_date'].notna() | df['empty_container_return_date'].notna())
+# ].copy()
+
+
+
 df_filtered = df[
     df['best_eta_dp_date'].notna() &
     (df['best_eta_dp_date'] < today) &
     (df['delivery_to_consignee_date'].notna() | df['empty_container_return_date'].notna())
-].copy()
+]
 
 # Format key date columns
 for col in ['best_eta_dp_date', 'delivery_to_consignee_date', 'empty_container_return_date']:
@@ -199,7 +228,7 @@ for col in ['best_eta_dp_date', 'delivery_to_consignee_date', 'empty_container_r
 # Select Output Columns
 result = df_filtered[[
     'container_number',
-    'po_numbers',
+    # 'po_numbers',
     'discharge_port',
     'best_eta_dp_date',
     'final_destination',
@@ -232,7 +261,13 @@ df_filtered = df[
 df_filtered['best_eta_dp_date'] = df_filtered['best_eta_dp_date'].dt.strftime('%d-%b-%Y')
 
 # Select relevant columns
-result = df_filtered[['container_number', 'po_numbers', 'load_port', 'discharge_port', 'best_eta_dp_date']]
+result = df_filtered[[
+    'container_number', 
+    # 'po_numbers', 
+    'load_port', 
+    'discharge_port', 
+    'best_eta_dp_date'
+    ]]
 ```
 
 ### Scenario F: Shipment Not Yet Arrived At DP (Missed ETA / Overdue)
@@ -256,7 +291,8 @@ not_arrived_mask = df['ata_dp_date'].isna()
 overdue_mask = df['best_eta_dp_date'].notna() & (df['best_eta_dp_date'] <= today)
 
 mask = loc_mask & not_arrived_mask & overdue_mask
-df_filtered = df[mask].copy()
+# df_filtered = df[mask].copy()
+df_filtered = df[mask]
 
 # Sort latest expected arrivals first (current date first)
 df_filtered = df_filtered.sort_values('best_eta_dp_date', ascending=False)
@@ -264,6 +300,13 @@ df_filtered = df_filtered.sort_values('best_eta_dp_date', ascending=False)
 df_filtered['best_eta_dp_date'] = df_filtered['best_eta_dp_date'].dt.strftime('%d-%b-%Y')
 
 result = df_filtered[
-    ['container_number', 'po_numbers', 'load_port', 'discharge_port', 'best_eta_dp_date', 'shipment_status']
+    [
+        'container_number', 
+        # 'po_numbers', 
+        'load_port', 
+        'discharge_port', 
+        'best_eta_dp_date', 
+        'shipment_status'
+        ]
 ]
 ```

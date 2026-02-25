@@ -2,7 +2,7 @@ import contextlib
 import io
 import json
 import re
-import sys
+import sys  # type: ignore
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -94,7 +94,8 @@ class PandasAnalyticsEngine:
                 return df_in.sort_values(by=col, ascending=False, kind="stable")
             parsed = pd.to_datetime(s, errors="coerce", utc=True)
             if parsed.notna().sum() > 0:
-                sorted_df = df_in.copy()
+                # sorted_df = df_in.copy()
+                sorted_df = df_in
                 sorted_df["_sort_dt_tmp"] = parsed
                 sorted_df = sorted_df.sort_values(
                     by="_sort_dt_tmp", ascending=False, kind="stable"
@@ -139,7 +140,7 @@ class PandasAnalyticsEngine:
                 working_df[col] = series.astype("string")
 
         # Execution context
-        local_scope = {
+        local_scope = {  # type: ignore
             "df": working_df,
             "pd": pd,
             "np": np,
@@ -149,18 +150,18 @@ class PandasAnalyticsEngine:
 
         try:
             with contextlib.redirect_stdout(output_buffer):
-                exec(code, {}, local_scope)
+                exec(code, {}, local_scope)  # type: ignore
 
             output = output_buffer.getvalue()
-            result_val = local_scope.get("result")
+            result_val = local_scope.get("result")  # type: ignore
             result_type = (
-                type(result_val).__name__ if result_val is not None else "None"
+                type(result_val).__name__ if result_val is not None else "None"  # type: ignore
             )
 
             filtered_rows = None
             filtered_preview = ""
             filtered_dataframe: Optional[pd.DataFrame] = None
-            df_filtered = local_scope.get("df_filtered")
+            df_filtered = local_scope.get("df_filtered")  # type: ignore
             if isinstance(df_filtered, pd.DataFrame):
                 df_filtered = self._sort_df_latest_first(df_filtered)
                 local_scope["df_filtered"] = df_filtered
@@ -208,7 +209,7 @@ class PandasAnalyticsEngine:
                     result_dataframe = result_val
                 result_export = result_val.to_markdown()
             else:
-                result_export = str(result_val) if result_val is not None else ""
+                result_export = str(result_val) if result_val is not None else ""  # type: ignore
 
             # If no result variable, rely on print output
             final_answer = result_export if result_export else output

@@ -11,8 +11,7 @@ sys.path.insert(0, str(project_root / "src"))
 if "SHIPMENT_QNA_BOT_TEST_MODE" in os.environ:
     del os.environ["SHIPMENT_QNA_BOT_TEST_MODE"]
 
-from shipment_qna_bot.graph.nodes.analytics_planner import \
-    analytics_planner_node
+from shipment_qna_bot.graph.nodes.analytics_planner import analytics_planner_node
 
 
 def test_real_analytics_node():

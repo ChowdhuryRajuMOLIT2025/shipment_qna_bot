@@ -18,8 +18,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from reindex_data import flatten_document, load_data
 
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
-from shipment_qna_bot.tools.azure_openai_embeddings import \
-    AzureOpenAIEmbeddingsClient
+from shipment_qna_bot.tools.azure_openai_embeddings import AzureOpenAIEmbeddingsClient
 
 
 def robust_upload(tool, docs, batch_size=100, max_retries=3):

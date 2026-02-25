@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
-from shipment_qna_bot.api.routes_chat import \
-    router as chat_router  # type: ignore
+from shipment_qna_bot.api.routes_chat import router as chat_router  # type: ignore
 from shipment_qna_bot.logging.middleware_log import RequestLoggingMiddleware
 
 app = FastAPI(title="MCS Shipment Chat Bot")
@@ -27,6 +27,14 @@ app.add_middleware(RequestLoggingMiddleware)
 from starlette.middleware.sessions import SessionMiddleware
 
 app.add_middleware(SessionMiddleware, secret_key=_APP_INSTANCE_ID)
+
+# Gzip compression reduces transfer time for large table/text responses without
+# changing the JSON schema or response types. Clients transparently decompress.
+if os.getenv("ENABLE_GZIP", "true").lower() == "true":
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=int(os.getenv("GZIP_MIN_SIZE", "1000")),
+    )
 
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")

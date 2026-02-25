@@ -7,9 +7,13 @@ from fastapi import APIRouter, Request
 
 from shipment_qna_bot.graph.builder import run_graph
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.models.schemas import (ChartSpec, ChatAnswer,
-                                             ChatRequest, EvidenceItem,
-                                             TableSpec)
+from shipment_qna_bot.models.schemas import (
+    ChartSpec,
+    ChatAnswer,
+    ChatRequest,
+    EvidenceItem,
+    TableSpec,
+)
 from shipment_qna_bot.security.scope import resolve_allowed_scope
 
 router = APIRouter(tags=["chat"], prefix="/api")

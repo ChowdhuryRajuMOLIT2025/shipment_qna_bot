@@ -11,8 +11,7 @@ from typing import Any, Dict, List
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
-from shipment_qna_bot.tools.azure_openai_embeddings import \
-    AzureOpenAIEmbeddingsClient
+from shipment_qna_bot.tools.azure_openai_embeddings import AzureOpenAIEmbeddingsClient
 
 
 def load_data(file_path: str) -> List[Dict[str, Any]]:

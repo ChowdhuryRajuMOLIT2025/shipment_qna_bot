@@ -13,8 +13,7 @@ sys.path.insert(0, str(project_root / "src"))
 if "SHIPMENT_QNA_BOT_TEST_MODE" in os.environ:
     del os.environ["SHIPMENT_QNA_BOT_TEST_MODE"]
 
-from shipment_qna_bot.graph.nodes.analytics_planner import \
-    analytics_planner_node
+from shipment_qna_bot.graph.nodes.analytics_planner import analytics_planner_node
 
 CONSIGNEE_CODES = "0000866,0001363,0001540,0001615,0002679,0002990,0003427,0003905,0004932,0005052,0005053,0005056,0005171,0005176,0009633,0013505,0021472,0023453,0028662,0028664,0029594,0030961,0030962,0037361,0048392".split(
     ","

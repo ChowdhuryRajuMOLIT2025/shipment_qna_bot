@@ -1,5 +1,5 @@
 import re
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional, cast  # type: ignore
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -66,7 +66,7 @@ def clarification_node(state: GraphState) -> GraphState:
     )
 
     with log_node_execution(
-        "Clarification", {"intent": "clarification"}, state_ref=state
+        "Clarification", {"intent": "clarification"}, state_ref=state  # type: ignore
     ):
         question = state.get("question_raw") or ""
         history = state.get("messages") or []
@@ -79,14 +79,15 @@ def clarification_node(state: GraphState) -> GraphState:
                 or state.get("normalized_question")
                 or question
             )
-            added = topic_shift.get("added") or []
-            reason = ", ".join(added) if added else "prior context"
+            added = topic_shift.get("added") or []  # type: ignore
+            reason = ", ".join(added) if added else "prior context"  # type: ignore
 
             clarification_text = (
                 "I want to confirm the scope before running analytics.\n\n"
                 f"I can interpret your question in two ways ({reason} was added from earlier context):\n"
                 f"1) Use previous context: {norm_q}\n"
-                f"2) New topic (ignore previous context): {raw_q}\n\n"
+                # f"2) New topic (ignore previous context): {raw_q}\n\n"
+                f"2) Considering new topic: {raw_q}\n\n"
                 "Reply with 1 or 2. You can also rephrase your question explicitly."
             )
 
@@ -109,16 +110,19 @@ def clarification_node(state: GraphState) -> GraphState:
                 or question
             )
             prev_count = analytics_scope.get("previous_result_count")
-            prev_label = (
+            prev_label = (  # type: ignore
                 f"previous analytics result ({prev_count} rows)"
                 if isinstance(prev_count, int) and prev_count >= 0
                 else "previous analytics result"
             )
 
             clarification_text = (
-                "I can run this follow-up in two scopes:\n\n"
-                f"1) Use the {prev_label}\n"
-                "2) Use all shipments in your authorized session scope\n\n"
+                "Alright! I can execute and find this follow-up in two scopes:\n\n"
+                # f"1) Use the {prev_label}\n"
+                # "2) Use all shipments in your authorized session scope\n\n"
+                # "Reply with 1 or 2."
+                f"1) Using the last result: {question}\n"
+                "2) Using all the shipment information I have\n\n"
                 "Reply with 1 or 2."
             )
 
@@ -142,8 +146,11 @@ def clarification_node(state: GraphState) -> GraphState:
             )
 
             clarification_text = (
-                "I can help in two ways for this request:\n\n"
-                f"1) Analytics summary across your shipments: {question}\n"
+                "Alright! I can help in two ways for this request:\n\n"
+                # f"1) Analytics summary across your shipments: {question}\n"
+                # "2) Specific shipment lookup by IDs (container/PO/booking/OBL)\n\n"
+                # "Reply with 1 or 2."
+                f"1) Using the last result: {question}\n"
                 "2) Specific shipment lookup by IDs (container/PO/booking/OBL)\n\n"
                 "Reply with 1 or 2."
             )
@@ -176,10 +183,10 @@ def clarification_node(state: GraphState) -> GraphState:
         # We limit history to avoid huge context, just last few turns + current question
         for msg in history[-4:]:
             role = "user" if isinstance(msg, HumanMessage) else "assistant"
-            messages.append({"role": role, "content": str(msg.content)})
+            messages.append({"role": role, "content": str(msg.content)})  # type: ignore
 
         # Ensure the current question is at the end if not already in history (it should be)
-        if not history or history[-1].content != question:
+        if not history or history[-1].content != question:  # type: ignore
             messages.append({"role": "user", "content": question})
 
         try:
@@ -196,7 +203,7 @@ def clarification_node(state: GraphState) -> GraphState:
         except Exception as e:
             logger.error(f"Clarification generation failed: {e}")
             state["answer_text"] = (
-                "I'm not sure I understood. Could you please provide more details?"
+                "My bad! I did not get your query. Could you please reframe your question?"
             )
             state["is_satisfied"] = True
             state["intent"] = "clarification"

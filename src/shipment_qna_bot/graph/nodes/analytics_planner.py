@@ -1,4 +1,5 @@
 import json  # type: ignore
+import os
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
 
@@ -6,8 +7,10 @@ import pandas as pd
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.tools.analytics_metadata import (ANALYTICS_METADATA,
-                                                       INTERNAL_COLUMNS)
+from shipment_qna_bot.tools.analytics_metadata import (
+    ANALYTICS_METADATA,
+    INTERNAL_COLUMNS,
+)
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.pandas_engine import PandasAnalyticsEngine
@@ -16,6 +19,12 @@ from shipment_qna_bot.utils.runtime import is_test_mode
 _CHAT_TOOL: Optional[AzureOpenAIChatTool] = None
 _BLOB_MGR: Optional[BlobAnalyticsManager] = None
 _PANDAS_ENG: Optional[PandasAnalyticsEngine] = None
+_READY_REF_SNIPPET_CACHE: Optional[str] = None
+
+_PROMPT_SAMPLE_ROWS = 3
+_PROMPT_SAMPLE_COLS = 18
+_PROMPT_SAMPLE_CELL_CHARS = 80
+_READY_REF_MAX_CHARS = 3600
 
 
 def _get_chat() -> AzureOpenAIChatTool:
@@ -37,6 +46,104 @@ def _get_pandas_engine() -> PandasAnalyticsEngine:
     if _PANDAS_ENG is None:
         _PANDAS_ENG = PandasAnalyticsEngine()  # type: ignore
     return _PANDAS_ENG
+
+
+def _truncate_prompt_text(text: str, limit: int) -> str:
+    text = (text or "").replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def _prompt_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    if isinstance(value, (list, tuple, dict)):
+        try:
+            rendered = json.dumps(value, default=str)
+        except Exception:
+            rendered = str(value)  # type: ignore
+    else:
+        rendered = str(value)
+    return _truncate_prompt_text(rendered, _PROMPT_SAMPLE_CELL_CHARS)
+
+
+def _build_compact_df_sample(df: pd.DataFrame) -> str:
+    if df.empty:
+        return "(no rows)"
+
+    preferred_cols = [
+        "container_number",
+        "po_numbers",
+        "shipment_status",
+        "discharge_port",
+        "final_destination",
+        "best_eta_dp_date",
+        "best_eta_fd_date",
+        "eta_dp_date",
+        "eta_fd_date",
+        "ata_dp_date",
+        "dp_delayed_dur",
+        "fd_delayed_dur",
+        "cargo_weight_kg",
+        "final_carrier_name",
+        "final_vessel_name",
+    ]
+    selected_cols: List[str] = [c for c in preferred_cols if c in df.columns]
+    for c in df.columns:
+        if c in selected_cols:
+            continue
+        selected_cols.append(c)
+        if len(selected_cols) >= _PROMPT_SAMPLE_COLS:
+            break
+
+    sample_rows = min(_PROMPT_SAMPLE_ROWS, len(df))
+    sample_df = df[selected_cols].head(sample_rows).copy().astype("object")
+    for col in sample_df.columns:
+        sample_df.loc[:, col] = sample_df[col].map(_prompt_cell)
+
+    notes: List[str] = []
+    if len(df) > sample_rows:
+        notes.append(f"rows truncated to {sample_rows} of {len(df)}")
+    if len(df.columns) > len(selected_cols):
+        notes.append(f"columns truncated to {len(selected_cols)} of {len(df.columns)}")
+
+    sample_md = sample_df.to_markdown(index=False)
+    if notes:
+        sample_md += "\n\n[compact sample: " + "; ".join(notes) + "]"
+    return sample_md
+
+
+def _load_ready_ref_snippet() -> str:
+    global _READY_REF_SNIPPET_CACHE
+    if _READY_REF_SNIPPET_CACHE is not None:
+        return _READY_REF_SNIPPET_CACHE
+
+    ready_ref_content = ""
+    try:
+        ready_ref_path = "docs/ready_ref.md"
+        if not os.path.exists(ready_ref_path):
+            base_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "../../../../")
+            )
+            ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
+
+        if os.path.exists(ready_ref_path):
+            with open(ready_ref_path, "r", encoding="utf-8") as f:
+                ready_ref_content = f.read()
+    except Exception as e:
+        logger.warning(f"Could not load ready_ref.md: {e}")
+
+    if ready_ref_content and len(ready_ref_content) > _READY_REF_MAX_CHARS:
+        ready_ref_content = (
+            ready_ref_content[:_READY_REF_MAX_CHARS].rstrip()
+            + "\n\n[Ready Ref truncated for token budget.]"
+        )
+
+    _READY_REF_SNIPPET_CACHE = ready_ref_content  # type: ignore
+    return _READY_REF_SNIPPET_CACHE
 
 
 def _extract_python_code(content: str) -> str:
@@ -61,7 +168,7 @@ def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None
     }
     for k, v in usage.items():
         if isinstance(v, (int, float)):
-            usage_metadata[k] = usage_metadata.get(k, 0) + v
+            usage_metadata[k] = usage_metadata.get(k, 0) + v  # type: ignore
     state["usage_metadata"] = usage_metadata
 
 
@@ -69,12 +176,12 @@ def _normalize_selector_tokens(value: Any) -> List[str]:
     if value is None:
         return []
     if isinstance(value, (list, tuple, set)):
-        raw_items = list(value)
+        raw_items = list(value)  # type: ignore
     else:
         raw_items = [value]
 
     out: List[str] = []
-    for item in raw_items:
+    for item in raw_items:  # type: ignore
         if item is None:
             continue
         if isinstance(item, str):
@@ -85,8 +192,8 @@ def _normalize_selector_tokens(value: Any) -> List[str]:
                 try:
                     parsed = json.loads(text)
                     if isinstance(parsed, list):
-                        for p in parsed:
-                            token = str(p).strip().upper()
+                        for p in parsed:  # type: ignore
+                            token = str(p).strip().upper()  # type: ignore
                             if token:
                                 out.append(token)
                         continue
@@ -100,13 +207,13 @@ def _normalize_selector_tokens(value: Any) -> List[str]:
                 continue
             out.append(text.upper())
             continue
-        token = str(item).strip().upper()
+        token = str(item).strip().upper()  # type: ignore
         if token:
             out.append(token)
 
     # Deduplicate preserving order
-    seen = set()
-    return [x for x in out if not (x in seen or seen.add(x))]
+    seen = set()  # type: ignore
+    return [x for x in out if not (x in seen or seen.add(x))]  # type: ignore
 
 
 def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -134,8 +241,8 @@ def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str
             values.extend(_normalize_selector_tokens(val))
         if values:
             # Deduplicate preserving order
-            seen = set()
-            ids[col] = [x for x in values if not (x in seen or seen.add(x))]
+            seen = set()  # type: ignore
+            ids[col] = [x for x in values if not (x in seen or seen.add(x))]  # type: ignore
 
     if not ids:
         return None
@@ -150,7 +257,7 @@ def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str
 def _apply_followup_selector(
     df: pd.DataFrame, selector: Optional[Dict[str, Any]]
 ) -> Optional[pd.DataFrame]:
-    if selector is None or not isinstance(selector, dict):
+    if selector is None or not isinstance(selector, dict):  # type: ignore
         return None
     if df.empty:
         return df.copy()
@@ -163,10 +270,10 @@ def _apply_followup_selector(
     used_rule = False
 
     for col in ["document_id", "doc_id", "container_number"]:
-        values = selector_ids.get(col)
+        values = selector_ids.get(col)  # type: ignore
         if col not in df.columns or not isinstance(values, list) or not values:
             continue
-        allowed = {str(v).strip().upper() for v in values if str(v).strip()}
+        allowed = {str(v).strip().upper() for v in values if str(v).strip()}  # type: ignore
         if not allowed:
             continue
         col_series = df[col].astype("string").str.upper()
@@ -174,10 +281,10 @@ def _apply_followup_selector(
         used_rule = True
 
     for col in ["po_numbers", "booking_numbers", "obl_nos"]:
-        values = selector_ids.get(col)
+        values = selector_ids.get(col)  # type: ignore
         if col not in df.columns or not isinstance(values, list) or not values:
             continue
-        allowed = {str(v).strip().upper() for v in values if str(v).strip()}
+        allowed = {str(v).strip().upper() for v in values if str(v).strip()}  # type: ignore
         if not allowed:
             continue
 
@@ -332,8 +439,8 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         # 2. Prepare Context for LLM
         columns = list(df.columns)
-        # Head sample (first 5 rows) to help LLM understand values
-        head_sample = df.head(5).to_markdown(index=False)
+        # Use a compact bounded sample to avoid oversized prompts on wide datasets.
+        head_sample = _build_compact_df_sample(df)
         scope_label = (
             "previous analytics result subset"
             if analytics_context_mode == "previous_result"
@@ -342,31 +449,7 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         shape_info = f"Rows: {df.shape[0]}, Columns: {df.shape[1]}, Execution Scope: {scope_label}"
 
         # Dynamic Column Reference
-        # Load Ready Reference if available
-        ready_ref_content = ""
-        try:
-            # Assuming docs is at the root of the project, relative to this file path
-            # This file is in src/shipment_qna_bot/graph/nodes/
-            # docs is in docs/
-            # So we need to go up 4 levels: .../src/shipment_qna_bot/graph/nodes/../../../../docs/ready_ref.md
-            # Better to use a relative path from the CWD if we assume running from root
-            import os
-
-            ready_ref_path = "docs/ready_ref.md"
-            if os.path.exists(ready_ref_path):
-                with open(ready_ref_path, "r") as f:
-                    ready_ref_content = f.read()
-            else:
-                # Fallback: try absolute path based on file location
-                base_dir = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "../../../../")
-                )
-                ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
-                if os.path.exists(ready_ref_path):
-                    with open(ready_ref_path, "r") as f:
-                        ready_ref_content = f.read()
-        except Exception as e:
-            logger.warning(f"Could not load ready_ref.md: {e}")
+        ready_ref_content = _load_ready_ref_snippet()
 
         col_ref = ""
         # We have ready_ref, we might not need the auto-generated list,
@@ -377,6 +460,15 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in ANALYTICS_METADATA.items():
             if k in columns:
                 col_ref += f"- `{k}`: {v['desc']} (Type: {v['type']})\n"
+
+        logger.info(
+            "Analytics prompt context prepared: rows=%s cols=%s sample_chars=%s ready_ref_chars=%s",
+            df.shape[0],
+            df.shape[1],
+            len(head_sample),
+            len(ready_ref_content),
+            extra={"step": "NODE:AnalyticsPlanner"},
+        )
 
         system_prompt = f"""
 You are a Pandas Data Analyst. You have access to a DataFrame `df` containing shipment data.
@@ -573,7 +665,7 @@ result = df_filtered[cols]
                 logger.info(
                     "Stored analytics follow-up selector rows=%s keys=%s",
                     state["last_analytics_result_count"],
-                    list((followup_selector.get("ids") or {}).keys()),
+                    list((followup_selector.get("ids") or {}).keys()),  # type: ignore
                     extra={"step": "NODE:AnalyticsPlanner"},
                 )
             else:

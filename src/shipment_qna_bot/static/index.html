@@ -855,7 +855,24 @@
                     })
                 });
 
-                const data = await response.json();
+                let data = null;
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    try {
+                        data = await response.json();
+                    } catch (parseError) {
+                        data = null;
+                    }
+                } else {
+                    const errorText = await response.text();
+                    data = { detail: errorText || `HTTP ${response.status}` };
+                }
+
+                if (!response.ok) {
+                    const apiMsg = data?.detail || data?.answer || `Request failed (${response.status})`;
+                    addMessage(`API error: ${apiMsg}`, 'bot');
+                    return;
+                }
 
                 if (data.answer) {
                     addMessage(data.answer, 'bot', data.metadata, data.table, data.intent);
@@ -873,7 +890,7 @@
 
             } catch (error) {
                 console.error('Error:', error);
-                addMessage("Network error. Please try again.", 'bot');
+                addMessage("Network error or server unavailable. Please try again.", 'bot');
             } finally {
                 setLoadingState(false);
                 input.focus();

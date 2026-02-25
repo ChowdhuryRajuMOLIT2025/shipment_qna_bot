@@ -16,13 +16,11 @@ load_dotenv(find_dotenv(), override=True)
 # Ensure src is in python path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from ingest_all import (compute_doc_hash, load_manifest, save_manifest,
-                        write_deadletter)
+from ingest_all import compute_doc_hash, load_manifest, save_manifest, write_deadletter
 from reindex_data import flatten_document, load_data
 
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
-from shipment_qna_bot.tools.azure_openai_embeddings import \
-    AzureOpenAIEmbeddingsClient
+from shipment_qna_bot.tools.azure_openai_embeddings import AzureOpenAIEmbeddingsClient
 
 
 def _get_search_client() -> Tuple[SearchClient, str]:

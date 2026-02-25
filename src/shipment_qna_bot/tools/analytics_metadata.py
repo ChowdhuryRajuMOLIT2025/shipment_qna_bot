@@ -6,6 +6,10 @@ data type casting and LLM dynamic prompt generation.
 
 # Searchable columns with their technical and human-friendly attributes
 ANALYTICS_METADATA = {
+    "job_no": {
+        "desc": "The job number associated with container.",
+        "type": "string",
+    },
     "container_number": {
         "desc": "The unique 11-character container identifier.",
         "type": "string",
@@ -348,7 +352,7 @@ ANALYTICS_METADATA = {
 # Technical columns that should NOT be visible to the LLM or used in UI reports
 INTERNAL_COLUMNS = [
     "carr_eqp_uid",
-    "job_no",
+    # "job_no",
     "consignee_codes",
     "document_id",
     "combined_content",
@@ -379,4 +383,5 @@ COLUMN_SYNONYMS = {
     "po": "po_numbers",
     "container": "container_number",
     "obl": "obl_nos",
+    "job_no": "job_no",
 }

@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,7 @@ from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
+_SEARCH_TOP_K_HARD_MAX = int(os.getenv("SEARCH_TOP_K_HARD_MAX", "120"))
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
@@ -325,6 +327,14 @@ def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             plan["top_k"] = max(current_top_k or 20, 500)
             if not plan.get("query_text") or plan["query_text"] == q:
                 plan["query_text"] = "*"
+
+        # Hard cap top_k to prevent oversized search payloads and prompt context growth.
+        requested_top_k = int(plan.get("top_k") or 20)
+        if requested_top_k > _SEARCH_TOP_K_HARD_MAX:
+            plan["top_k"] = _SEARCH_TOP_K_HARD_MAX
+            state.setdefault("notices", []).append(
+                f"Result window limited to {_SEARCH_TOP_K_HARD_MAX} rows for performance."
+            )
 
         state["retrieval_plan"] = plan
         logger.info(f"Planned retrieval: {plan}")

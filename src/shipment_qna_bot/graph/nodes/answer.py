@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, cast
@@ -10,6 +11,10 @@ from shipment_qna_bot.tools.date_tools import get_today_date
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: Optional[AzureOpenAIChatTool] = None
+_READY_REF_SNIPPET_CACHE: Optional[str] = None
+_MAX_READY_REF_CHARS = 3200
+_MAX_ANSWER_HITS_CONTEXT = 6
+_MAX_ANSWER_HISTORY_TURNS = 6
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
@@ -17,6 +22,52 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
     if _chat_tool is None:
         _chat_tool = AzureOpenAIChatTool()
     return _chat_tool
+
+
+def _truncate_ctx(value: Any, limit: int = 180) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, dict)):
+        try:
+            text = json.dumps(value, default=str)
+        except Exception:
+            text = str(value)
+    else:
+        text = str(value)
+    text = text.replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def _load_ready_ref_snippet() -> str:
+    global _READY_REF_SNIPPET_CACHE
+    if _READY_REF_SNIPPET_CACHE is not None:
+        return _READY_REF_SNIPPET_CACHE
+
+    ready_ref_content = ""
+    try:
+        ready_ref_path = "docs/ready_ref.md"
+        if not os.path.exists(ready_ref_path):
+            base_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "../../../../")
+            )
+            ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
+
+        if os.path.exists(ready_ref_path):
+            with open(ready_ref_path, "r", encoding="utf-8") as f:
+                ready_ref_content = f.read()
+    except Exception:
+        ready_ref_content = ""
+
+    if ready_ref_content and len(ready_ref_content) > _MAX_READY_REF_CHARS:
+        ready_ref_content = (
+            ready_ref_content[:_MAX_READY_REF_CHARS].rstrip()
+            + "\n\n[Ready Ref truncated for token budget.]"
+        )
+
+    _READY_REF_SNIPPET_CACHE = ready_ref_content
+    return _READY_REF_SNIPPET_CACHE
 
 
 def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -245,25 +296,8 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     )
                 context_str += f"Status Breakdown: {facet_summary}\n"
 
-        # Load Ready Reference
-        ready_ref_content = ""
-        try:
-            import os
-
-            # Try relative path first (assuming running from root)
-            ready_ref_path = "docs/ready_ref.md"
-            if not os.path.exists(ready_ref_path):
-                # Fallback: try absolute path based on file location
-                base_dir = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "../../../../")
-                )
-                ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
-
-            if os.path.exists(ready_ref_path):
-                with open(ready_ref_path, "r") as f:
-                    ready_ref_content = f.read()
-        except Exception:
-            pass  # Fail silently/gracefully
+        # Load bounded Ready Reference snippet to avoid prompt bloat.
+        ready_ref_content = _load_ready_ref_snippet()
 
         # 2. Add Documents Context
         if hits:
@@ -271,7 +305,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # Refactor: We now include ALL relevant columns in the context and let the LLM
             # (guided by ready_ref.md) decide what to focus on.
 
-            for i, hit in enumerate(hits[:10]):
+            for i, hit in enumerate(hits[:_MAX_ANSWER_HITS_CONTEXT]):
                 context_str += f"\n--- Document {i+1} ---\n"
 
                 # Prioritize key fields (Unified List)
@@ -311,19 +345,26 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
                 for f in priority_fields:
                     if f in hit:
-                        context_str += f"{f}: {hit[f]}\n"
+                        context_str += f"{f}: {_truncate_ctx(hit[f])}\n"
 
-                # Always include full content for grounding if available
-                if "content" in hit:
-                    context_str += f"Content: {hit['content']}\n"
+                # Include a bounded content excerpt for grounding without flooding the prompt.
+                if "content" in hit and hit.get("content"):
+                    context_str += (
+                        f"Content Snippet: {_truncate_ctx(hit['content'], limit=420)}\n"
+                    )
 
                 # Add metadata_json content intelligently
                 if "metadata_json" in hit:
                     try:
                         m = json.loads(str(hit["metadata_json"]))
                         if "milestones" in m:
+                            milestones = m.get("milestones")
+                            if isinstance(milestones, list):
+                                milestones = milestones[:4]
                             context_str += (
-                                f"Milestones: {json.dumps(m['milestones'])}\n"
+                                "Milestones: "
+                                + _truncate_ctx(milestones, limit=420)
+                                + "\n"
                             )
                     except:
                         pass
@@ -436,11 +477,20 @@ System Instructions:
         llm_messages = [{"role": "system", "content": system_prompt}]
         history = cast(List[Any], state.get("messages") or [])
 
-        for msg in history:
+        for msg in history[-_MAX_ANSWER_HISTORY_TURNS:]:
             if isinstance(msg, HumanMessage) and msg.content == question:
                 continue
             role = "user" if getattr(msg, "type", "") == "human" else "assistant"
             llm_messages.append({"role": role, "content": str(msg.content)})
+
+        logger.info(
+            "Answer prompt context prepared: hits_in_prompt=%s history_msgs=%s context_chars=%s ready_ref_chars=%s",
+            min(len(hits), _MAX_ANSWER_HITS_CONTEXT),
+            max(0, min(len(history), _MAX_ANSWER_HISTORY_TURNS)),
+            len(context_str),
+            len(ready_ref_content),
+            extra={"step": "NODE:Answer"},
+        )
 
         llm_messages.append({"role": "user", "content": user_prompt})
 

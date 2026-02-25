@@ -1,7 +1,7 @@
 import glob
 import os
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timedelta  # type: ignore
+from typing import List, Optional  # type: ignore
 
 import pandas as pd
 from azure.storage.blob import BlobClient
@@ -171,22 +171,30 @@ class BlobAnalyticsManager:
                 # But assuming standard parquet list support.
                 pass
 
-            exploded = df.explode(target_col)
-            mask = exploded[target_col].isin(consignee_codes)
-            valid_indices = exploded[mask].index.unique()
+            # Explode only the consignee column (Series) to avoid duplicating all 100+ columns
+            # in memory during filtering.
+            exploded_codes = df[target_col].explode()
+            mask = exploded_codes.isin(set(consignee_codes))
+            valid_indices = exploded_codes[mask].index.unique()
 
-            filtered_df = df.loc[valid_indices].copy()
+            # Avoid a full copy when the filter resolves to most/all rows; we'll use explicit
+            # .loc assignment during type casting to keep memory peaks lower.
+            filtered_df = df.loc[valid_indices]
+
+            del exploded_codes
+            del mask
+            del valid_indices
 
             # Automatic Type Casting based on Metadata
             for col, meta in ANALYTICS_METADATA.items():
                 if col in filtered_df.columns:
                     col_type = meta.get("type")
                     if col_type == "numeric":
-                        filtered_df[col] = pd.to_numeric(
+                        filtered_df.loc[:, col] = pd.to_numeric(
                             filtered_df[col], errors="coerce"
                         )
                     elif col_type == "datetime":
-                        filtered_df[col] = pd.to_datetime(
+                        filtered_df.loc[:, col] = pd.to_datetime(
                             filtered_df[col], errors="coerce"
                         )
 

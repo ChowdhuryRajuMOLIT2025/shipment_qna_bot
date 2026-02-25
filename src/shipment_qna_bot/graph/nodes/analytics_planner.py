@@ -1,4 +1,5 @@
 import json  # type: ignore
+import os
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
 
@@ -16,6 +17,14 @@ from shipment_qna_bot.utils.runtime import is_test_mode
 _CHAT_TOOL: Optional[AzureOpenAIChatTool] = None
 _BLOB_MGR: Optional[BlobAnalyticsManager] = None
 _PANDAS_ENG: Optional[PandasAnalyticsEngine] = None
+_READY_REF_SNIPPET_CACHE: Optional[str] = None
+
+_PROMPT_SAMPLE_ROWS = 3
+_PROMPT_SAMPLE_COLS = 18
+_PROMPT_SAMPLE_CELL_CHARS = 80
+_READY_REF_MAX_CHARS = 3600
+_DEFAULT_ANALYTICS_WINDOW_DAYS = 90
+_DEFAULT_DELAY_SEVERITY_CAP_DAYS = 7
 
 
 def _get_chat() -> AzureOpenAIChatTool:
@@ -37,6 +46,355 @@ def _get_pandas_engine() -> PandasAnalyticsEngine:
     if _PANDAS_ENG is None:
         _PANDAS_ENG = PandasAnalyticsEngine()  # type: ignore
     return _PANDAS_ENG
+
+
+def _truncate_prompt_text(text: str, limit: int) -> str:
+    text = (text or "").replace("\r", " ").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def _prompt_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, float) and pd.isna(value):
+        return ""
+    if isinstance(value, (list, tuple, dict)):
+        try:
+            rendered = json.dumps(value, default=str)
+        except Exception:
+            rendered = str(value)  # type: ignore
+    else:
+        rendered = str(value)
+    return _truncate_prompt_text(rendered, _PROMPT_SAMPLE_CELL_CHARS)
+
+
+def _build_compact_df_sample(df: pd.DataFrame) -> str:
+    if df.empty:
+        return "(no rows)"
+
+    preferred_cols = [
+        "container_number",
+        "po_numbers",
+        "shipment_status",
+        "discharge_port",
+        "final_destination",
+        "best_eta_dp_date",
+        "best_eta_fd_date",
+        "eta_dp_date",
+        "eta_fd_date",
+        "ata_dp_date",
+        "dp_delayed_dur",
+        "fd_delayed_dur",
+        "cargo_weight_kg",
+        "final_carrier_name",
+        "final_vessel_name",
+    ]
+    selected_cols: List[str] = [c for c in preferred_cols if c in df.columns]
+    for c in df.columns:
+        if c in selected_cols:
+            continue
+        selected_cols.append(c)
+        if len(selected_cols) >= _PROMPT_SAMPLE_COLS:
+            break
+
+    sample_rows = min(_PROMPT_SAMPLE_ROWS, len(df))
+    sample_df = df[selected_cols].head(sample_rows).copy().astype("object")
+    for col in sample_df.columns:
+        sample_df.loc[:, col] = sample_df[col].map(_prompt_cell)
+
+    notes: List[str] = []
+    if len(df) > sample_rows:
+        notes.append(f"rows truncated to {sample_rows} of {len(df)}")
+    if len(df.columns) > len(selected_cols):
+        notes.append(f"columns truncated to {len(selected_cols)} of {len(df.columns)}")
+
+    sample_md = sample_df.to_markdown(index=False)
+    if notes:
+        sample_md += "\n\n[compact sample: " + "; ".join(notes) + "]"
+    return sample_md
+
+
+def _load_ready_ref_snippet() -> str:
+    global _READY_REF_SNIPPET_CACHE
+    if _READY_REF_SNIPPET_CACHE is not None:
+        return _READY_REF_SNIPPET_CACHE
+
+    ready_ref_content = ""
+    try:
+        ready_ref_path = "docs/ready_ref.md"
+        if not os.path.exists(ready_ref_path):
+            base_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "../../../../")
+            )
+            ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
+
+        if os.path.exists(ready_ref_path):
+            with open(ready_ref_path, "r", encoding="utf-8") as f:
+                ready_ref_content = f.read()
+    except Exception as e:
+        logger.warning(f"Could not load ready_ref.md: {e}")
+
+    if ready_ref_content and len(ready_ref_content) > _READY_REF_MAX_CHARS:
+        ready_ref_content = (
+            ready_ref_content[:_READY_REF_MAX_CHARS].rstrip()
+            + "\n\n[Ready Ref truncated for token budget.]"
+        )
+
+    _READY_REF_SNIPPET_CACHE = ready_ref_content  # type: ignore
+    return _READY_REF_SNIPPET_CACHE
+
+
+def _question_has_explicit_date_window(state: Dict[str, Any], question: str) -> bool:
+    if state.get("time_window_days"):
+        return True
+
+    extracted = state.get("extracted_ids") or {}
+    if isinstance(extracted, dict):
+        date_range_val = extracted.get("date_range")
+        if isinstance(date_range_val, list) and any(
+            str(v).strip() for v in date_range_val
+        ):
+            return True
+        if isinstance(date_range_val, str) and date_range_val.strip():
+            return True
+
+    q = (question or "").lower()
+    month_re = (
+        r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+        r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+        r"nov(?:ember)?|dec(?:ember)?)\b"
+    )
+    explicit_patterns = [
+        month_re,
+        r"\b\d{4}\b",
+        r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+        r"\b(?:today|yesterday|tomorrow)\b",
+        r"\b(?:this|last|next)\s+(?:week|month|quarter|year)\b",
+        r"\b(?:within|last|past|previous)\s+\d+\s+days?\b",
+        r"\b(?:between|from)\b.*\b(?:to|and)\b",
+    ]
+    return any(re.search(pat, q) for pat in explicit_patterns)
+
+
+def _mentions_fd_scope(text: str) -> bool:
+    lowered = (text or "").lower()
+    if "final destination" in lowered or "final_destination" in lowered:
+        return True
+    if "distribution center" in lowered or "distribution centre" in lowered:
+        return True
+    if re.search(r"\bin-?dc\b", lowered):
+        return True
+    if re.search(r"\bfd\b", lowered):
+        return True
+    return False
+
+
+def _infer_default_window_cap(question: str) -> Optional[Dict[str, str]]:
+    q = (question or "").lower()
+
+    cargo_received = "cargo received" in q
+    future_like = any(
+        token in q
+        for token in (
+            "will receive",
+            "incoming",
+            "coming in",
+            "arriving",
+            "expected",
+            "eta",
+        )
+    )
+    received_like = any(
+        token in q for token in (" received", "received ", "arrived", "arrival")
+    )
+    delay_like = "delay" in q or "delayed" in q or "late" in q
+    early_like = "early" in q
+
+    if cargo_received:
+        return {
+            "column": "cargo_receiveds_date",
+            "direction": "past",
+            "reason": "explicit cargo-received query",
+        }
+
+    if "received" in q and "not delivered" in q:
+        return {
+            "column": "ata_dp_date",
+            "direction": "past",
+            "reason": "received-but-not-delivered query",
+        }
+
+    if received_like and not future_like:
+        return {
+            "column": "ata_dp_date",
+            "direction": "past",
+            "reason": "received/arrived query",
+        }
+
+    if future_like:
+        return {
+            "column": (
+                "best_eta_fd_date" if _mentions_fd_scope(q) else "best_eta_dp_date"
+            ),
+            "direction": "future",
+            "reason": "incoming/future-arrival query",
+        }
+
+    if delay_like or early_like:
+        return {
+            "column": (
+                "best_eta_fd_date" if _mentions_fd_scope(q) else "best_eta_dp_date"
+            ),
+            "direction": "past",
+            "reason": "delay/early query without explicit date window",
+        }
+
+    return None
+
+
+def _default_window_today(state: Dict[str, Any]) -> pd.Timestamp:
+    raw = state.get("now_utc") or state.get("today_date")
+    if raw:
+        try:
+            ts = pd.Timestamp(raw)
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.tz_convert(None)
+            return ts.normalize()
+        except Exception:
+            pass
+    # Fallback to current UTC date normalized, cast to naive for dataframe comparisons.
+    return pd.Timestamp.utcnow().tz_localize(None).normalize()
+
+
+def _apply_default_analytics_time_cap(
+    df: pd.DataFrame, state: Dict[str, Any], question: str
+) -> tuple[pd.DataFrame, Optional[str]]:
+    if df.empty:
+        return df, None
+
+    if _question_has_explicit_date_window(state, question):
+        return df, None
+
+    cap_spec = _infer_default_window_cap(question)
+    if not cap_spec:
+        return df, None
+
+    anchor_col = cap_spec["column"]
+    if anchor_col not in df.columns:
+        return df, None
+
+    date_series = df[anchor_col]
+    if not pd.api.types.is_datetime64_any_dtype(date_series):
+        date_series = pd.to_datetime(date_series, errors="coerce")
+
+    today = _default_window_today(state)
+    days = _DEFAULT_ANALYTICS_WINDOW_DAYS
+    if cap_spec["direction"] == "future":
+        start_dt = today
+        end_dt = today + pd.Timedelta(days=days)
+    else:
+        start_dt = today - pd.Timedelta(days=days)
+        end_dt = today
+
+    mask = date_series.notna() & (date_series >= start_dt) & (date_series <= end_dt)
+    capped_df = df.loc[mask].copy()
+    if len(capped_df) >= len(df):
+        return df, None
+
+    notice = (
+        f"Applied default {days}-day "
+        f"{'future' if cap_spec['direction'] == 'future' else 'lookback'} "
+        f"window on `{anchor_col}` ({cap_spec['reason']}) because no date range was specified."
+    )
+    return capped_df, notice
+
+
+def _question_has_explicit_delay_or_early_threshold(question: str) -> bool:
+    q = (question or "").lower()
+    if not any(token in q for token in ("delay", "delayed", "late", "early")):
+        return False
+
+    explicit_threshold_patterns = [
+        r"\b(?:more than|greater than|less than|under|over|at least|at most)\s+\d+(?:\.\d+)?\s*days?\b",
+        r"\bbetween\s+\d+(?:\.\d+)?\s*(?:and|to)\s*\d+(?:\.\d+)?\s*days?\b",
+        r"\b\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*days?\b",
+        r"\b(?:delay|delayed|late|early)\s+by\s+(?:more than\s+|less than\s+|over\s+|under\s+)?\d+(?:\.\d+)?\s*days?\b",
+        r"\b(?:delay|delayed|late|early)\s+of\s+\d+(?:\.\d+)?\s*days?\b",
+        r"\b\d+(?:\.\d+)?\s*days?\s+(?:delay|delayed|late|early)\b",
+        r"[<>]=?\s*\d+(?:\.\d+)?\s*days?\b",
+    ]
+    return any(re.search(pat, q) for pat in explicit_threshold_patterns)
+
+
+def _infer_default_delay_or_early_severity_cap(
+    question: str,
+) -> Optional[Dict[str, Any]]:
+    q = (question or "").lower()
+    delay_like = any(token in q for token in ("delay", "delayed", "late"))
+    early_like = "early" in q
+
+    if not delay_like and not early_like:
+        return None
+    if delay_like and early_like:
+        return None
+    if _question_has_explicit_delay_or_early_threshold(question):
+        return None
+
+    metric_col = "fd_delayed_dur" if _mentions_fd_scope(q) else "dp_delayed_dur"
+    scope_label = "FD" if metric_col == "fd_delayed_dur" else "DP"
+    days = _DEFAULT_DELAY_SEVERITY_CAP_DAYS
+
+    if early_like:
+        return {
+            "column": metric_col,
+            "kind": "early",
+            "days": days,
+            "notice": (
+                f"No early threshold was specified, so I used the default {scope_label} early range: "
+                f"1 to {days} days early ({metric_col} from -{days} to -1)."
+            ),
+        }
+
+    return {
+        "column": metric_col,
+        "kind": "delay",
+        "days": days,
+        "notice": (
+            f"No delay threshold was specified, so I used the default {scope_label} delay range: "
+            f"1 to {days} days."
+        ),
+    }
+
+
+def _apply_default_delay_or_early_severity_cap(
+    df: pd.DataFrame, question: str
+) -> tuple[pd.DataFrame, Optional[str]]:
+    if df.empty:
+        return df, None
+
+    cap_spec = _infer_default_delay_or_early_severity_cap(question)
+    if not cap_spec:
+        return df, None
+
+    metric_col = str(cap_spec["column"])
+    if metric_col not in df.columns:
+        return df, None
+
+    metric = pd.to_numeric(df[metric_col], errors="coerce")
+    days = float(cap_spec["days"])
+
+    if cap_spec["kind"] == "early":
+        mask = metric.notna() & (metric < 0) & (metric >= -days)
+    else:
+        mask = metric.notna() & (metric > 0) & (metric <= days)
+
+    capped_df = df.loc[mask].copy()
+    if len(capped_df) >= len(df):
+        return df, None
+
+    return capped_df, str(cap_spec["notice"])
 
 
 def _extract_python_code(content: str) -> str:
@@ -61,7 +419,7 @@ def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None
     }
     for k, v in usage.items():
         if isinstance(v, (int, float)):
-            usage_metadata[k] = usage_metadata.get(k, 0) + v
+            usage_metadata[k] = usage_metadata.get(k, 0) + v  # type: ignore
     state["usage_metadata"] = usage_metadata
 
 
@@ -69,12 +427,12 @@ def _normalize_selector_tokens(value: Any) -> List[str]:
     if value is None:
         return []
     if isinstance(value, (list, tuple, set)):
-        raw_items = list(value)
+        raw_items = list(value)  # type: ignore
     else:
         raw_items = [value]
 
     out: List[str] = []
-    for item in raw_items:
+    for item in raw_items:  # type: ignore
         if item is None:
             continue
         if isinstance(item, str):
@@ -85,8 +443,8 @@ def _normalize_selector_tokens(value: Any) -> List[str]:
                 try:
                     parsed = json.loads(text)
                     if isinstance(parsed, list):
-                        for p in parsed:
-                            token = str(p).strip().upper()
+                        for p in parsed:  # type: ignore
+                            token = str(p).strip().upper()  # type: ignore
                             if token:
                                 out.append(token)
                         continue
@@ -100,13 +458,13 @@ def _normalize_selector_tokens(value: Any) -> List[str]:
                 continue
             out.append(text.upper())
             continue
-        token = str(item).strip().upper()
+        token = str(item).strip().upper()  # type: ignore
         if token:
             out.append(token)
 
     # Deduplicate preserving order
-    seen = set()
-    return [x for x in out if not (x in seen or seen.add(x))]
+    seen = set()  # type: ignore
+    return [x for x in out if not (x in seen or seen.add(x))]  # type: ignore
 
 
 def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -134,8 +492,8 @@ def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str
             values.extend(_normalize_selector_tokens(val))
         if values:
             # Deduplicate preserving order
-            seen = set()
-            ids[col] = [x for x in values if not (x in seen or seen.add(x))]
+            seen = set()  # type: ignore
+            ids[col] = [x for x in values if not (x in seen or seen.add(x))]  # type: ignore
 
     if not ids:
         return None
@@ -150,7 +508,7 @@ def _extract_followup_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str
 def _apply_followup_selector(
     df: pd.DataFrame, selector: Optional[Dict[str, Any]]
 ) -> Optional[pd.DataFrame]:
-    if selector is None or not isinstance(selector, dict):
+    if selector is None or not isinstance(selector, dict):  # type: ignore
         return None
     if df.empty:
         return df.copy()
@@ -163,10 +521,10 @@ def _apply_followup_selector(
     used_rule = False
 
     for col in ["document_id", "doc_id", "container_number"]:
-        values = selector_ids.get(col)
+        values = selector_ids.get(col)  # type: ignore
         if col not in df.columns or not isinstance(values, list) or not values:
             continue
-        allowed = {str(v).strip().upper() for v in values if str(v).strip()}
+        allowed = {str(v).strip().upper() for v in values if str(v).strip()}  # type: ignore
         if not allowed:
             continue
         col_series = df[col].astype("string").str.upper()
@@ -174,10 +532,10 @@ def _apply_followup_selector(
         used_rule = True
 
     for col in ["po_numbers", "booking_numbers", "obl_nos"]:
-        values = selector_ids.get(col)
+        values = selector_ids.get(col)  # type: ignore
         if col not in df.columns or not isinstance(values, list) or not values:
             continue
-        allowed = {str(v).strip().upper() for v in values if str(v).strip()}
+        allowed = {str(v).strip().upper() for v in values if str(v).strip()}  # type: ignore
         if not allowed:
             continue
 
@@ -320,6 +678,27 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     f"Applied previous analytics result scope ({len(df)} rows)."
                 )
 
+            rows_before_default_cap = len(df)
+            df, default_cap_notice = _apply_default_analytics_time_cap(df, state, q)
+            if default_cap_notice:
+                state.setdefault("notices", []).append(default_cap_notice)
+                logger.info(
+                    "Applied default analytics time cap rows_before=%s rows_after=%s",
+                    rows_before_default_cap,
+                    len(df),
+                    extra={"step": "NODE:AnalyticsPlanner"},
+                )
+            rows_before_severity_cap = len(df)
+            df, severity_cap_notice = _apply_default_delay_or_early_severity_cap(df, q)
+            if severity_cap_notice:
+                state.setdefault("notices", []).append(severity_cap_notice)
+                logger.info(
+                    "Applied default delay/early severity cap rows_before=%s rows_after=%s",
+                    rows_before_severity_cap,
+                    len(df),
+                    extra={"step": "NODE:AnalyticsPlanner"},
+                )
+
         except Exception as e:
             logger.error(f"Analytics Data Load Failed: {e}")
             state.setdefault("errors", []).append(f"Data Load Error: {e}")
@@ -332,8 +711,8 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         # 2. Prepare Context for LLM
         columns = list(df.columns)
-        # Head sample (first 5 rows) to help LLM understand values
-        head_sample = df.head(5).to_markdown(index=False)
+        # Use a compact bounded sample to avoid oversized prompts on wide datasets.
+        head_sample = _build_compact_df_sample(df)
         scope_label = (
             "previous analytics result subset"
             if analytics_context_mode == "previous_result"
@@ -342,31 +721,7 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         shape_info = f"Rows: {df.shape[0]}, Columns: {df.shape[1]}, Execution Scope: {scope_label}"
 
         # Dynamic Column Reference
-        # Load Ready Reference if available
-        ready_ref_content = ""
-        try:
-            # Assuming docs is at the root of the project, relative to this file path
-            # This file is in src/shipment_qna_bot/graph/nodes/
-            # docs is in docs/
-            # So we need to go up 4 levels: .../src/shipment_qna_bot/graph/nodes/../../../../docs/ready_ref.md
-            # Better to use a relative path from the CWD if we assume running from root
-            import os
-
-            ready_ref_path = "docs/ready_ref.md"
-            if os.path.exists(ready_ref_path):
-                with open(ready_ref_path, "r") as f:
-                    ready_ref_content = f.read()
-            else:
-                # Fallback: try absolute path based on file location
-                base_dir = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "../../../../")
-                )
-                ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
-                if os.path.exists(ready_ref_path):
-                    with open(ready_ref_path, "r") as f:
-                        ready_ref_content = f.read()
-        except Exception as e:
-            logger.warning(f"Could not load ready_ref.md: {e}")
+        ready_ref_content = _load_ready_ref_snippet()
 
         col_ref = ""
         # We have ready_ref, we might not need the auto-generated list,
@@ -377,6 +732,15 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         for k, v in ANALYTICS_METADATA.items():
             if k in columns:
                 col_ref += f"- `{k}`: {v['desc']} (Type: {v['type']})\n"
+
+        logger.info(
+            "Analytics prompt context prepared: rows=%s cols=%s sample_chars=%s ready_ref_chars=%s",
+            df.shape[0],
+            df.shape[1],
+            len(head_sample),
+            len(ready_ref_content),
+            extra={"step": "NODE:AnalyticsPlanner"},
+        )
 
         system_prompt = f"""
 You are a Pandas Data Analyst. You have access to a DataFrame `df` containing shipment data.
@@ -573,7 +937,7 @@ result = df_filtered[cols]
                 logger.info(
                     "Stored analytics follow-up selector rows=%s keys=%s",
                     state["last_analytics_result_count"],
-                    list((followup_selector.get("ids") or {}).keys()),
+                    list((followup_selector.get("ids") or {}).keys()),  # type: ignore
                     extra={"step": "NODE:AnalyticsPlanner"},
                 )
             else:

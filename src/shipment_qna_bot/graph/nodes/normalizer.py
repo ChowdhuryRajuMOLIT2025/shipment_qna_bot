@@ -10,6 +10,8 @@ from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _CHAT_TOOL = None
+_NORMALIZER_HISTORY_TURNS = 6
+_NORMALIZER_MSG_MAX_CHARS = 400
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
@@ -509,8 +511,11 @@ Guidelines:
         # history includes current question as the last item (if it was added in run_graph)
         # Actually builder.py adds it just before invoke.
 
-        for msg in history[:-1]:
+        recent_history = history[:-1][-_NORMALIZER_HISTORY_TURNS:]
+        for msg in recent_history:
             content = str(getattr(msg, "content", "")).strip()
+            if len(content) > _NORMALIZER_MSG_MAX_CHARS:
+                content = content[: _NORMALIZER_MSG_MAX_CHARS - 3] + "..."
             if _is_control_reply(content):
                 continue
             role = "user" if msg.type == "human" else "assistant"

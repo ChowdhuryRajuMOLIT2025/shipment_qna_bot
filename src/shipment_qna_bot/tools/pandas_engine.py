@@ -2,7 +2,7 @@ import contextlib
 import io
 import json
 import re
-import sys
+import sys  # type: ignore
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -28,6 +28,11 @@ class PandasAnalyticsEngine:
             "json": json,
         }
         self.allowed_import_roots = {"pandas", "numpy", "json"}
+        self.max_preview_rows = 25
+        self.max_preview_cols = 16
+        self.max_result_rows = 200
+        self.max_result_cols = 20
+        self.max_cell_chars = 120
 
     @staticmethod
     def _strip_code_fences(code: str) -> str:
@@ -94,13 +99,65 @@ class PandasAnalyticsEngine:
                 return df_in.sort_values(by=col, ascending=False, kind="stable")
             parsed = pd.to_datetime(s, errors="coerce", utc=True)
             if parsed.notna().sum() > 0:
-                sorted_df = df_in.copy()
+                # sorted_df = df_in.copy()
+                sorted_df = df_in
                 sorted_df["_sort_dt_tmp"] = parsed
                 sorted_df = sorted_df.sort_values(
                     by="_sort_dt_tmp", ascending=False, kind="stable"
                 )
                 return sorted_df.drop(columns=["_sort_dt_tmp"])
         return df_in
+
+    def _truncate_cell(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, float) and pd.isna(value):
+            return ""
+        if isinstance(value, (list, tuple, dict)):
+            try:
+                text = json.dumps(value, default=str)
+            except Exception:
+                text = str(value)  # type: ignore
+        else:
+            text = str(value)
+        text = text.replace("\r", " ").replace("\n", " ").strip()
+        if len(text) > self.max_cell_chars:
+            return text[: self.max_cell_chars - 3] + "..."
+        return text
+
+    def _to_markdown_limited(
+        self,
+        value: pd.DataFrame | pd.Series,
+        *,
+        max_rows: int,
+        max_cols: int,
+        index: bool = True,
+    ) -> str:
+        notes: List[str] = []
+
+        if isinstance(value, pd.Series):
+            row_count = int(len(value))
+            series_view = value.head(max_rows).copy()
+            series_view = series_view.map(self._truncate_cell)
+            if row_count > max_rows:
+                notes.append(f"rows truncated to {max_rows} of {row_count}")
+            md = series_view.to_markdown()
+        else:
+            row_count = int(len(value))
+            cols = list(value.columns)
+            selected_cols = cols[:max_cols]
+            df_view = value[selected_cols].head(max_rows).copy().astype("object")
+            for col in df_view.columns:
+                df_view.loc[:, col] = df_view[col].map(self._truncate_cell)
+            if row_count > max_rows:
+                notes.append(f"rows truncated to {max_rows} of {row_count}")
+            if len(cols) > max_cols:
+                notes.append(f"columns truncated to {max_cols} of {len(cols)}")
+            md = df_view.to_markdown(index=index)
+
+        if notes:
+            md += "\n\n[truncated: " + "; ".join(notes) + "]"
+        return md
 
     def execute_code(self, df: pd.DataFrame, code: str) -> Dict[str, Any]:
         """
@@ -130,16 +187,22 @@ class PandasAnalyticsEngine:
         # Trap stdout
         output_buffer = io.StringIO()
 
-        working_df = df.copy()
+        # Shallow copy dramatically reduces peak memory vs deep copy on wide tables.
+        # We only deep-copy if we actually need to coerce one or more columns for `.str` ops.
+        working_df = df.copy(deep=False)
+        deep_copy_made = False
         for col in self._extract_str_columns(code):
             if col not in working_df.columns:
                 continue
             series = working_df[col]
             if not pd.api.types.is_string_dtype(series):
-                working_df[col] = series.astype("string")
+                if not deep_copy_made:
+                    working_df = working_df.copy()
+                    deep_copy_made = True
+                working_df.loc[:, col] = working_df[col].astype("string")
 
         # Execution context
-        local_scope = {
+        local_scope = {  # type: ignore
             "df": working_df,
             "pd": pd,
             "np": np,
@@ -149,18 +212,18 @@ class PandasAnalyticsEngine:
 
         try:
             with contextlib.redirect_stdout(output_buffer):
-                exec(code, {}, local_scope)
+                exec(code, {}, local_scope)  # type: ignore
 
             output = output_buffer.getvalue()
-            result_val = local_scope.get("result")
+            result_val = local_scope.get("result")  # type: ignore
             result_type = (
-                type(result_val).__name__ if result_val is not None else "None"
+                type(result_val).__name__ if result_val is not None else "None"  # type: ignore
             )
 
             filtered_rows = None
             filtered_preview = ""
             filtered_dataframe: Optional[pd.DataFrame] = None
-            df_filtered = local_scope.get("df_filtered")
+            df_filtered = local_scope.get("df_filtered")  # type: ignore
             if isinstance(df_filtered, pd.DataFrame):
                 df_filtered = self._sort_df_latest_first(df_filtered)
                 local_scope["df_filtered"] = df_filtered
@@ -182,9 +245,16 @@ class PandasAnalyticsEngine:
                     ]
                     cols = [c for c in preferred_cols if c in df_filtered.columns]
                     preview_df = (
-                        df_filtered[cols].head(50) if cols else df_filtered.head(50)
+                        df_filtered[cols].head(self.max_preview_rows)
+                        if cols
+                        else df_filtered.head(self.max_preview_rows)
                     )
-                    filtered_preview = preview_df.to_markdown(index=False)
+                    filtered_preview = self._to_markdown_limited(
+                        preview_df,
+                        max_rows=self.max_preview_rows,
+                        max_cols=self.max_preview_cols,
+                        index=False,
+                    )
 
             # If result is a dataframe or series, convert to something json-serializable/string
             # for the agent to consume easily
@@ -206,9 +276,13 @@ class PandasAnalyticsEngine:
                 if isinstance(result_val, pd.DataFrame):
                     result_val = self._sort_df_latest_first(result_val)
                     result_dataframe = result_val
-                result_export = result_val.to_markdown()
+                result_export = self._to_markdown_limited(
+                    result_val,  # type: ignore
+                    max_rows=self.max_result_rows,
+                    max_cols=self.max_result_cols,
+                )
             else:
-                result_export = str(result_val) if result_val is not None else ""
+                result_export = str(result_val) if result_val is not None else ""  # type: ignore
 
             # If no result variable, rely on print output
             final_answer = result_export if result_export else output

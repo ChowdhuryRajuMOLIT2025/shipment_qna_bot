@@ -14,6 +14,7 @@ from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 
+from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.security.rls import build_search_filter
 from shipment_qna_bot.utils.runtime import is_test_mode
 
@@ -43,6 +44,8 @@ class AzureAISearchTool:
             self._consignee_field = "consignee_code_ids"
             self._consignee_is_collection = True
             self._vector_field = "content_vector"
+            self._disable_compact_select = False
+            self._select_fields = None
             return
 
         endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
@@ -80,6 +83,75 @@ class AzureAISearchTool:
 
         # vector field
         self._vector_field = os.getenv("AZURE_SEARCH_VECTOR_FIELD", "content_vector")
+        self._disable_compact_select = False
+        self._select_fields = self._build_select_fields()
+
+    def _build_select_fields(self) -> Optional[List[str]]:
+        env_select = (os.getenv("AZURE_SEARCH_SELECT_FIELDS") or "").strip()
+        if env_select:
+            if env_select.lower() in {"all", "none", "*"}:
+                return None
+            candidate_fields = [f.strip() for f in env_select.split(",") if f.strip()]
+        else:
+            # Runtime allowlist for retrieval/answer/judge. This keeps payloads compact
+            # while preserving downstream fields used for display, filtering, and grounding.
+            candidate_fields = [
+                self._id_field,
+                self._content_field,
+                self._container_field,
+                self._metadata_field,
+                "shipment_status",
+                "po_numbers",
+                "booking_numbers",
+                "obl_nos",
+                "hot_container_flag",
+                "true_carrier_scac_name",
+                "final_carrier_name",
+                "first_vessel_name",
+                "final_vessel_name",
+                "load_port",
+                "discharge_port",
+                "final_destination",
+                "best_eta_dp_date",
+                "derived_ata_dp_date",
+                "eta_dp_date",
+                "ata_dp_date",
+                "optimal_ata_dp_date",
+                "best_eta_fd_date",
+                "eta_fd_date",
+                "optimal_eta_fd_date",
+                "delayed_dp",
+                "dp_delayed_dur",
+                "delayed_fd",
+                "fd_delayed_dur",
+                "cargo_weight_kg",
+                "cargo_measure_cubic_meter",
+                "cargo_count",
+                "cargo_detail_count",
+                "empty_container_return_date",
+                "delivery_to_consignee_date",
+            ]
+
+        seen = set()  # type: ignore
+        select_fields: List[str] = []
+        for field in candidate_fields:
+            if not field or field in {self._vector_field, self._consignee_field}:
+                continue
+            if field in seen:
+                continue
+            seen.add(field)  # type: ignore
+            select_fields.append(field)
+        return select_fields or None
+
+    @staticmethod
+    def _looks_like_select_schema_error(err: Exception) -> bool:
+        text = str(err).lower()
+        return (
+            "select" in text
+            or "could not find a property" in text
+            or "is not a valid property" in text
+            or "unknown field" in text
+        )
 
     def _consignee_filter(self, codes: List[str]) -> str:
         # Uses search.in for matching against a list.
@@ -95,7 +167,7 @@ class AzureAISearchTool:
             return "false"
 
         # Collection field:
-        # consignee_code_ids/any(c: search.in(c, '0000866,234567', ','))
+        # consignee_code_ids/any(c: search.in(c, '0230866,234567', ','))
         if self._consignee_is_collection:
             return build_search_filter(
                 allowed_codes=clean_codes, field_name=self._consignee_field
@@ -140,17 +212,13 @@ class AzureAISearchTool:
         final_filter = (
             base_filter if not extra_filter else f"({base_filter}) and ({extra_filter})"
         )
-        select = [
-            self._id_field,
-            self._content_field,
-            self._container_field,
-        ]
+        select = None if self._disable_compact_select else self._select_fields
 
         kwargs: Dict[str, Any] = {
             "search_text": query_text or "*",
             "top": top_k,
             "filter": final_filter,
-            "select": None,  # Retrieve all retrievable fields
+            "select": select,
             "skip": skip,
             "order_by": order_by,
         }
@@ -168,17 +236,29 @@ class AzureAISearchTool:
                 )
             ]
 
-        results = self._client.search(**kwargs)
+        try:
+            results = self._client.search(**kwargs)  # type: ignore
+        except Exception as e:
+            if kwargs.get("select") and self._looks_like_select_schema_error(e):
+                logger.warning(
+                    "Azure Search compact select failed; retrying with all retrievable fields. err=%s",
+                    e,
+                )
+                self._disable_compact_select = True
+                kwargs["select"] = None
+                results = self._client.search(**kwargs)  # type: ignore
+            else:
+                raise
 
         hits: List[Dict[str, Any]] = []
-        for r in results:
-            doc = dict(r)
+        for r in results:  # type: ignore
+            doc = dict(r)  # type: ignore
 
             # Extract key fields using configured names
-            container_number = doc.get(self._container_field)
+            container_number = doc.get(self._container_field)  # type: ignore
             if not container_number:
                 # Fallback check inside metadata_json if top-level missing
-                raw_meta = doc.get(self._metadata_field)
+                raw_meta = doc.get(self._metadata_field)  # type: ignore
                 if isinstance(raw_meta, str):
                     try:
                         import json
@@ -188,29 +268,29 @@ class AzureAISearchTool:
                     except:
                         pass
                 elif isinstance(raw_meta, dict):
-                    container_number = raw_meta.get("container_number")
+                    container_number = raw_meta.get("container_number")  # type: ignore
 
-            hit = {
-                "doc_id": doc.get(self._id_field),
+            hit = {  # type: ignore
+                "doc_id": doc.get(self._id_field),  # type: ignore
                 "container_number": container_number,
-                "content": doc.get(self._content_field),
-                "score": doc.get("@search.score"),
-                "reranker_score": doc.get("@search.reranker_score"),
+                "content": doc.get(self._content_field),  # type: ignore
+                "score": doc.get("@search.score"),  # type: ignore
+                "reranker_score": doc.get("@search.reranker_score"),  # type: ignore
             }
             # Include all other fields except vectors to avoid bloat
-            for k, v in doc.items():
+            for k, v in doc.items():  # type: ignore
                 if k not in hit and k not in {
                     self._vector_field,
                     self._consignee_field,
                 }:
                     hit[k] = v
 
-            hits.append(hit)
+            hits.append(hit)  # type: ignore
 
         return {
             "hits": hits,
             "count": results.get_count() if include_total_count else None,
-            "facets": results.get_facets() if facets else None,
+            "facets": results.get_facets() if facets else None,  # type: ignore
         }
 
     def upload_documents(self, documents: List[Dict[str, Any]]) -> None:
@@ -218,7 +298,7 @@ class AzureAISearchTool:
         Uploads a batch of documents to the Azure Search index.
         """
         try:
-            results = self._client.upload_documents(documents=documents)
+            results = self._client.upload_documents(documents=documents)  # type: ignore
             failed = [r for r in results if not r.succeeded]
             if failed:
                 raise RuntimeError(
@@ -237,17 +317,17 @@ class AzureAISearchTool:
             # However, for RAG scenarios, sometimes it's easier to just delete and recreate the index,
             # but here we'll try to delete docs by key if they exist.
             # A more efficient way for large indexes is checking the count and batching.
-            results = self._client.search(
+            results = self._client.search(  # type: ignore
                 search_text="*", select=[self._id_field], top=1000
             )
-            keys_to_delete = [
+            keys_to_delete = [  # type: ignore
                 {"@search.action": "delete", self._id_field: r[self._id_field]}
-                for r in results
+                for r in results  # type: ignore
             ]
 
             if keys_to_delete:
-                self._client.upload_documents(documents=keys_to_delete)
-                print(f"Deleted {len(keys_to_delete)} documents from index.")
+                self._client.upload_documents(documents=keys_to_delete)  # type: ignore
+                print(f"Deleted {len(keys_to_delete)} documents from index.")  # type: ignore
             else:
                 print("Index already empty.")
         except Exception as e:

@@ -4,9 +4,8 @@ from shipment_qna_bot.graph.nodes.clarification import clarification_node
 from shipment_qna_bot.graph.nodes.intent import intent_node
 from shipment_qna_bot.graph.nodes.judge import judge_node
 from shipment_qna_bot.graph.nodes.normalizer import normalize_node
-from shipment_qna_bot.graph.nodes.static_greet_info_handler import (
-    should_handle_overview,
-)
+from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
+    should_handle_overview
 from shipment_qna_bot.tools.pandas_engine import PandasAnalyticsEngine
 
 

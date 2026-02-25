@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from shipment_qna_bot.api.routes_chat import router as chat_router  # type: ignore
+from shipment_qna_bot.api.routes_chat import \
+    router as chat_router  # type: ignore
 from shipment_qna_bot.logging.middleware_log import RequestLoggingMiddleware
 
 app = FastAPI(title="MCS Shipment Chat Bot")

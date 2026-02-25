@@ -1,9 +1,8 @@
 # tests/test_static_overview.py
 
 from shipment_qna_bot.graph.builder import run_graph
-from shipment_qna_bot.graph.nodes.static_greet_info_handler import (
-    build_static_overview_answer,
-)
+from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
+    build_static_overview_answer
 
 
 def _write_overview(tmp_path):

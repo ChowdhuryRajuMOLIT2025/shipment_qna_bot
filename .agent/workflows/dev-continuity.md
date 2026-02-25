@@ -23,6 +23,13 @@ Before writing any code, verify:
 - **OData (Search)**: Absolute prohibition of date math (`now()`, `add`).
 - **Pandas (Analytics)**: Must use `result = ...` assignment. No global side effects.
 - **Delay Logic**: Default to discharge port (`dp_delayed_dur`).
+- **Analytics Scope Guardrails (Added 2026-02-25)**:
+  - If user does not specify a date/month/range, apply a default directional 90-day cap before analytics code generation (date-window cap must be internal prefilter + user notice).
+  - If user asks delay/early but does not specify a delay/early threshold, apply a default 7-day severity band before analytics code generation:
+    - delayed: `0 < *_delayed_dur <= 7`
+    - early: `-7 <= *_delayed_dur < 0`
+  - Explicit date windows and explicit delay/early thresholds always override the defaults.
+  - Preserve API response envelope; communicate defaults via existing `notices` only (no schema changes).
 
 ### RESULT: Presentation & Grounding
 - All numbers must be grounded in the JSON hits or Pandas dataframes.
@@ -31,6 +38,9 @@ Before writing any code, verify:
 ## 3. VERIFICATION PROTOCOL
 - Run `pytest tests/test_pandas_flow.py` for analytics changes.
 - Run `pytest tests/test_integration_live.py` for retrieval changes.
+- For analytics guardrail changes (date cap / delay-early default band), also run:
+  - `python -m py_compile src/shipment_qna_bot/graph/nodes/analytics_planner.py`
+  - `pytest tests/test_route_chat.py` (response contract safety)
 
 ## 4. OPEN RCA TODO (Added 2026-02-19)
 

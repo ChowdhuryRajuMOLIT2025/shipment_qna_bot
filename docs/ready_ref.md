@@ -16,6 +16,99 @@ This file serves as a **Ready Reference** for the LLM to understand the dataset 
 - Date priority for sorting: `best_eta_dp_date` -> `best_eta_fd_date` -> `ata_dp_date` -> `derived_ata_dp_date` -> `eta_dp_date` -> `eta_fd_date`.
 - Apply `.dt.strftime('%d-%b-%Y')` only after sorting.
 
+## 0A. STRICT Column Selection & Filtering Guardrails (Performance + Accuracy)
+
+Use these rules to avoid wrong-column filtering. Correct column choice reduces failed analytics code generation, retries, and extra LLM calls.
+
+### Canonical Column Priority (Use This First)
+- **Discharge Port ETA / arrival window / overdue checks (DP):** `best_eta_dp_date` (fallback: `eta_dp_date`)
+- **Discharge Port actual arrival reached/not reached:** `ata_dp_date` (fallback for display only: `derived_ata_dp_date`)
+- **Final Destination ETA / arrival window / overdue checks (FD):** `best_eta_fd_date` (fallback: `eta_fd_date`)
+- **DP delay filter (generic \"delay\" unless FD explicitly requested):** `dp_delayed_dur`
+- **FD delay filter (only if user explicitly asks FD/final destination delay):** `fd_delayed_dur`
+- **DP delay category label:** `delayed_dp`
+- **FD delay category label:** `delayed_fd`
+
+### Location Filter Mapping (Very Important)
+- If user asks about **port arrival / DP / discharge port / arriving at port/city** -> filter `discharge_port`
+- If user asks about **final destination / FD / DC / warehouse / in-dc** -> filter `final_destination`
+- Do **NOT** use `load_port` for destination-arrival questions unless user explicitly says origin/load port.
+
+### ID Filter Mapping (Strict)
+- Container query -> `container_number`
+- PO query -> `po_numbers`
+- Booking query -> `booking_numbers`
+- OBL query -> `obl_nos`
+- Do not swap these list columns; if the identifier type is unclear, check all ID columns explicitly and state the assumption.
+
+### Delay Interpretation (Strict Defaults)
+- Generic \"delayed shipments\" -> use `dp_delayed_dur > 0`
+- If user says delayed/early but does **not** specify a delay/early threshold, apply a default severity band (to avoid huge pulls):
+  - DP delayed default -> `0 < dp_delayed_dur <= 7`
+  - DP early default -> `-7 <= dp_delayed_dur < 0`
+  - FD delayed default (explicit FD scope) -> `0 < fd_delayed_dur <= 7`
+  - FD early default (explicit FD scope) -> `-7 <= fd_delayed_dur < 0`
+- If user explicitly specifies delay/early severity (example: `more than 5 days`, `between 3 and 15 days`, `early by more than 3 days`), use the user threshold and **do not** apply the default 7-day severity band.
+- When the default severity band is applied, mention the assumption briefly in the response (example: `No delay threshold was specified, so I used the default DP delay range: 1 to 7 days.`).
+- \"FD delayed\" / \"final destination delayed\" -> use `fd_delayed_dur > 0`
+- \"On time\" DP -> prefer `dp_delayed_dur <= 0` or `delayed_dp == 'on_time'` (depending on question wording)
+- \"Missed ETA at DP\" -> `ata_dp_date.isna()` and `best_eta_dp_date <= today`
+
+### "Received" Interpretation (Strict Default)
+- If user says **shipment/container received** (without saying "cargo received"), default to `ata_dp_date.notna()`
+- If user explicitly says **cargo received**, use `cargo_receiveds_date` (current dataset column name / legacy naming)
+- <!-- If user says cargo received, use `cargo_received_date` -->
+- If future schema exposes `cargo_received_date`, treat it as alias mapping to current `cargo_receiveds_date`.
+- For "received within date", apply the date window on the same selected received-date column:
+  - default received -> `ata_dp_date`
+  - explicit cargo received -> `cargo_receiveds_date`
+
+### Default Date Window Cap (When User Does Not Specify Duration/Date)
+- To reduce huge data pull, if the user does **not** specify any date/month/range, apply a **default 90-day cap** using the correct anchor column.
+- Explicit date/month/range (example: `Dec'2026`, `last 30 days`, `between ... and ...`) **overrides** the default cap.
+- Delay/early queries without an explicit date window should still use this default 90-day cap in addition to the default 7-day severity band (unless the user provides a delay/early threshold).
+- Generic **received / arrived at DP / shipment received / container received**:
+  - anchor column: `ata_dp_date`
+  - default window: `today - 90 days` to `today`
+- Explicit **cargo received**:
+  - anchor column: `cargo_receiveds_date`
+  - default window: `today - 90 days` to `today`
+- **Received but not delivered** (without explicit date window):
+  - anchor column: `ata_dp_date`
+  - default window: `today - 90 days` to `today`
+- Future/incoming wording such as **will receive / incoming / arriving / expected / ETA**:
+  - anchor column: `best_eta_dp_date` (or `best_eta_fd_date` when FD/final destination/DC is explicitly requested)
+  - default window: `today` to `today + 90 days`
+- Delay queries without explicit date window:
+  - If query also says **received/arrived**, keep the default received anchor (`ata_dp_date`) for the 90-day lookback.
+  - Otherwise, use ETA anchor (`best_eta_dp_date` by default, `best_eta_fd_date` for FD scope).
+- Early queries without explicit date window:
+  - If query says **arrived early**, use received anchor (`ata_dp_date`) for the 90-day lookback.
+  - Otherwise, use ETA anchor (`best_eta_dp_date` by default, `best_eta_fd_date` for FD scope).
+- Mention the assumption briefly in the response when this default cap is used (example: "Using default 90-day window because no date range was specified.").
+
+### Anti-Mistake Rules (Do Not Use Unless Explicitly Asked)
+- Do **NOT** use `optimal_ata_dp_date` for default DP filtering (legacy only).
+- Do **NOT** use `optimal_eta_fd_date` as first-choice FD ETA if `best_eta_fd_date` is present.
+- Do **NOT** use `derived_ata_dp_date` for overdue/not-arrived filtering; use `ata_dp_date` null check first.
+- Do **NOT** filter DP questions using `final_destination`.
+- Do **NOT** filter FD/DC questions using `discharge_port` unless the user explicitly asks for port + FD comparison.
+- Do **NOT** use `cargo_receiveds_date` for generic "shipment/container received" questions unless user explicitly says cargo received.
+
+### Filtering Checklist Before Writing Pandas Code
+- Confirm question scope: DP vs FD vs load/origin
+- Confirm ID type: container vs PO vs booking vs OBL
+- Confirm metric type: ETA window vs actual arrival vs delay duration vs status
+- Confirm canonical column above before writing the mask
+
+### Example (Preferred Pattern)
+```python
+# DP arrival window -> use best_eta_dp_date (not ata_dp_date / optimal_ata_dp_date)
+loc_mask = df['discharge_port'].str.contains('nashville', case=False, na=False, regex=True)
+date_mask = df['best_eta_dp_date'].notna() & (df['best_eta_dp_date'] >= today) & (df['best_eta_dp_date'] <= next_5_days)
+df_filtered = df[loc_mask & date_mask]
+```
+
 ## 1. Dataset Columns (Schema)
 
 | Column Name | Type | Description |
@@ -149,7 +242,8 @@ result = df_filtered[[
 **User Query:** "Show me delayed FD shipments" (or "Check FD delays")
 **Logic:**
 - Filter: `fd_delayed_dur > 0`
-- Date Column: `eta_fd_date` or `best_eta_fd_date`
+<!-- - Date Column: `eta_fd_date` or `best_eta_fd_date` -->
+- Date Column (STRICT): `best_eta_fd_date` (fallback only if missing: `eta_fd_date`)
 - Display Protocol: Show container, FD date, and FD delay days.
 
 **Pandas Code:**
@@ -308,5 +402,112 @@ result = df_filtered[
         'best_eta_dp_date', 
         'shipment_status'
         ]
+]
+```
+
+### Scenario G: Shipment/Container Received But Not Yet Delivered Within Date
+**User Query:** "Show shipment/container I received but not yet delivered within date" (or "containers received last week but not delivered")
+**Interpretation Rules (STRICT):**
+- Default **"received"** means shipment/container reached DP -> `ata_dp_date` is not null.
+- Only if user explicitly says **"cargo received"**, use `cargo_receiveds_date` (current dataset column name).
+- "Not yet delivered" means **both** `delivery_to_consignee_date` and `empty_container_return_date` are null.
+- "Within date" applies to the selected received-date column (default `ata_dp_date`, explicit cargo-received -> `cargo_receiveds_date`).
+
+**Logic (Default shipment/container received):**
+- Received filter: `ata_dp_date.notna()`
+- Date window on `ata_dp_date`
+- Not delivered filter:
+  - `delivery_to_consignee_date.isna()`
+  - `empty_container_return_date.isna()`
+- Optional location mapping:
+  - DP/port wording -> filter `discharge_port`
+  - FD/DC wording -> filter `final_destination`
+
+**Pandas Code (Default = shipment/container received):**
+```python
+# Example date window (replace with user-derived dates)
+start_date = pd.Timestamp('2025-01-01')
+end_date = pd.Timestamp('2025-01-31')
+
+received_mask = df['ata_dp_date'].notna()
+date_mask = (
+    df['ata_dp_date'].notna() &
+    (df['ata_dp_date'] >= start_date) &
+    (df['ata_dp_date'] <= end_date)
+)
+not_delivered_mask = (
+    df['delivery_to_consignee_date'].isna() &
+    df['empty_container_return_date'].isna()
+)
+
+# Optional DP location example
+# loc_mask = df['discharge_port'].str.contains('nashville', case=False, na=False, regex=True)
+# mask = received_mask & date_mask & not_delivered_mask & loc_mask
+
+mask = received_mask & date_mask & not_delivered_mask
+# df_filtered = df[mask].copy()
+df_filtered = df[mask]
+
+# Sort latest received first BEFORE formatting
+df_filtered = df_filtered.sort_values('ata_dp_date', ascending=False)
+
+for col in ['ata_dp_date', 'delivery_to_consignee_date', 'empty_container_return_date']:
+    if col in df_filtered.columns:
+        df_filtered[col] = pd.to_datetime(df_filtered[col], errors='coerce').dt.strftime('%d-%b-%Y')
+
+result = df_filtered[
+    [
+        'container_number',
+        # 'po_numbers',
+        'discharge_port',
+        'final_destination',
+        'ata_dp_date',
+        'delivery_to_consignee_date',
+        'empty_container_return_date',
+        'shipment_status'
+    ]
+]
+```
+
+**Pandas Code (Only when user explicitly says \"cargo received\"):**
+```python
+# NOTE: Current dataset column is `cargo_receiveds_date` (legacy naming)
+start_date = pd.Timestamp('2025-01-01')
+end_date = pd.Timestamp('2025-01-31')
+
+cargo_recv_col = 'cargo_receiveds_date'
+
+df_work = df.copy()
+df_work[cargo_recv_col] = pd.to_datetime(df_work[cargo_recv_col], errors='coerce')
+
+cargo_received_mask = df_work[cargo_recv_col].notna()
+date_mask = (
+    df_work[cargo_recv_col].notna() &
+    (df_work[cargo_recv_col] >= start_date) &
+    (df_work[cargo_recv_col] <= end_date)
+)
+not_delivered_mask = (
+    df_work['delivery_to_consignee_date'].isna() &
+    df_work['empty_container_return_date'].isna()
+)
+
+df_filtered = df_work[cargo_received_mask & date_mask & not_delivered_mask]
+df_filtered = df_filtered.sort_values(cargo_recv_col, ascending=False)
+
+for col in [cargo_recv_col, 'delivery_to_consignee_date', 'empty_container_return_date']:
+    if col in df_filtered.columns:
+        df_filtered[col] = pd.to_datetime(df_filtered[col], errors='coerce').dt.strftime('%d-%b-%Y')
+
+result = df_filtered[
+    [
+        'container_number',
+        # 'po_numbers',
+        'discharge_port',
+        'final_destination',
+        cargo_recv_col,
+        'delivery_to_consignee_date',
+        'empty_container_return_date',
+        'shipment_status'
+    ]
 ]
 ```

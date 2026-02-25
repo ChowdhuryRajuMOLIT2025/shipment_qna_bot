@@ -1,12 +1,8 @@
 # tests/test_schemas_chat.py
 
-from shipment_qna_bot.models.schemas import (
-    ChartSpec,
-    ChatAnswer,
-    ChatRequest,
-    EvidenceItem,
-    TableSpec,
-)
+from shipment_qna_bot.models.schemas import (ChartSpec, ChatAnswer,
+                                             ChatRequest, EvidenceItem,
+                                             TableSpec)
 
 
 def test_chat_request_normalizes_question_and_consignee_codes():

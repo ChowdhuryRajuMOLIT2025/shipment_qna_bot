@@ -7,10 +7,8 @@ import pandas as pd
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.tools.analytics_metadata import (
-    ANALYTICS_METADATA,
-    INTERNAL_COLUMNS,
-)
+from shipment_qna_bot.tools.analytics_metadata import (ANALYTICS_METADATA,
+                                                       INTERNAL_COLUMNS)
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.pandas_engine import PandasAnalyticsEngine
@@ -25,6 +23,8 @@ _PROMPT_SAMPLE_ROWS = 3
 _PROMPT_SAMPLE_COLS = 18
 _PROMPT_SAMPLE_CELL_CHARS = 80
 _READY_REF_MAX_CHARS = 3600
+_DEFAULT_ANALYTICS_WINDOW_DAYS = 90
+_DEFAULT_DELAY_SEVERITY_CAP_DAYS = 7
 
 
 def _get_chat() -> AzureOpenAIChatTool:
@@ -144,6 +144,257 @@ def _load_ready_ref_snippet() -> str:
 
     _READY_REF_SNIPPET_CACHE = ready_ref_content  # type: ignore
     return _READY_REF_SNIPPET_CACHE
+
+
+def _question_has_explicit_date_window(state: Dict[str, Any], question: str) -> bool:
+    if state.get("time_window_days"):
+        return True
+
+    extracted = state.get("extracted_ids") or {}
+    if isinstance(extracted, dict):
+        date_range_val = extracted.get("date_range")
+        if isinstance(date_range_val, list) and any(
+            str(v).strip() for v in date_range_val
+        ):
+            return True
+        if isinstance(date_range_val, str) and date_range_val.strip():
+            return True
+
+    q = (question or "").lower()
+    month_re = (
+        r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+        r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+        r"nov(?:ember)?|dec(?:ember)?)\b"
+    )
+    explicit_patterns = [
+        month_re,
+        r"\b\d{4}\b",
+        r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b",
+        r"\b(?:today|yesterday|tomorrow)\b",
+        r"\b(?:this|last|next)\s+(?:week|month|quarter|year)\b",
+        r"\b(?:within|last|past|previous)\s+\d+\s+days?\b",
+        r"\b(?:between|from)\b.*\b(?:to|and)\b",
+    ]
+    return any(re.search(pat, q) for pat in explicit_patterns)
+
+
+def _mentions_fd_scope(text: str) -> bool:
+    lowered = (text or "").lower()
+    if "final destination" in lowered or "final_destination" in lowered:
+        return True
+    if "distribution center" in lowered or "distribution centre" in lowered:
+        return True
+    if re.search(r"\bin-?dc\b", lowered):
+        return True
+    if re.search(r"\bfd\b", lowered):
+        return True
+    return False
+
+
+def _infer_default_window_cap(question: str) -> Optional[Dict[str, str]]:
+    q = (question or "").lower()
+
+    cargo_received = "cargo received" in q
+    future_like = any(
+        token in q
+        for token in (
+            "will receive",
+            "incoming",
+            "coming in",
+            "arriving",
+            "expected",
+            "eta",
+        )
+    )
+    received_like = any(
+        token in q for token in (" received", "received ", "arrived", "arrival")
+    )
+    delay_like = "delay" in q or "delayed" in q or "late" in q
+    early_like = "early" in q
+
+    if cargo_received:
+        return {
+            "column": "cargo_receiveds_date",
+            "direction": "past",
+            "reason": "explicit cargo-received query",
+        }
+
+    if "received" in q and "not delivered" in q:
+        return {
+            "column": "ata_dp_date",
+            "direction": "past",
+            "reason": "received-but-not-delivered query",
+        }
+
+    if received_like and not future_like:
+        return {
+            "column": "ata_dp_date",
+            "direction": "past",
+            "reason": "received/arrived query",
+        }
+
+    if future_like:
+        return {
+            "column": (
+                "best_eta_fd_date" if _mentions_fd_scope(q) else "best_eta_dp_date"
+            ),
+            "direction": "future",
+            "reason": "incoming/future-arrival query",
+        }
+
+    if delay_like or early_like:
+        return {
+            "column": (
+                "best_eta_fd_date" if _mentions_fd_scope(q) else "best_eta_dp_date"
+            ),
+            "direction": "past",
+            "reason": "delay/early query without explicit date window",
+        }
+
+    return None
+
+
+def _default_window_today(state: Dict[str, Any]) -> pd.Timestamp:
+    raw = state.get("now_utc") or state.get("today_date")
+    if raw:
+        try:
+            ts = pd.Timestamp(raw)
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.tz_convert(None)
+            return ts.normalize()
+        except Exception:
+            pass
+    # Fallback to current UTC date normalized, cast to naive for dataframe comparisons.
+    return pd.Timestamp.utcnow().tz_localize(None).normalize()
+
+
+def _apply_default_analytics_time_cap(
+    df: pd.DataFrame, state: Dict[str, Any], question: str
+) -> tuple[pd.DataFrame, Optional[str]]:
+    if df.empty:
+        return df, None
+
+    if _question_has_explicit_date_window(state, question):
+        return df, None
+
+    cap_spec = _infer_default_window_cap(question)
+    if not cap_spec:
+        return df, None
+
+    anchor_col = cap_spec["column"]
+    if anchor_col not in df.columns:
+        return df, None
+
+    date_series = df[anchor_col]
+    if not pd.api.types.is_datetime64_any_dtype(date_series):
+        date_series = pd.to_datetime(date_series, errors="coerce")
+
+    today = _default_window_today(state)
+    days = _DEFAULT_ANALYTICS_WINDOW_DAYS
+    if cap_spec["direction"] == "future":
+        start_dt = today
+        end_dt = today + pd.Timedelta(days=days)
+    else:
+        start_dt = today - pd.Timedelta(days=days)
+        end_dt = today
+
+    mask = date_series.notna() & (date_series >= start_dt) & (date_series <= end_dt)
+    capped_df = df.loc[mask].copy()
+    if len(capped_df) >= len(df):
+        return df, None
+
+    notice = (
+        f"Applied default {days}-day "
+        f"{'future' if cap_spec['direction'] == 'future' else 'lookback'} "
+        f"window on `{anchor_col}` ({cap_spec['reason']}) because no date range was specified."
+    )
+    return capped_df, notice
+
+
+def _question_has_explicit_delay_or_early_threshold(question: str) -> bool:
+    q = (question or "").lower()
+    if not any(token in q for token in ("delay", "delayed", "late", "early")):
+        return False
+
+    explicit_threshold_patterns = [
+        r"\b(?:more than|greater than|less than|under|over|at least|at most)\s+\d+(?:\.\d+)?\s*days?\b",
+        r"\bbetween\s+\d+(?:\.\d+)?\s*(?:and|to)\s*\d+(?:\.\d+)?\s*days?\b",
+        r"\b\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*days?\b",
+        r"\b(?:delay|delayed|late|early)\s+by\s+(?:more than\s+|less than\s+|over\s+|under\s+)?\d+(?:\.\d+)?\s*days?\b",
+        r"\b(?:delay|delayed|late|early)\s+of\s+\d+(?:\.\d+)?\s*days?\b",
+        r"\b\d+(?:\.\d+)?\s*days?\s+(?:delay|delayed|late|early)\b",
+        r"[<>]=?\s*\d+(?:\.\d+)?\s*days?\b",
+    ]
+    return any(re.search(pat, q) for pat in explicit_threshold_patterns)
+
+
+def _infer_default_delay_or_early_severity_cap(
+    question: str,
+) -> Optional[Dict[str, Any]]:
+    q = (question or "").lower()
+    delay_like = any(token in q for token in ("delay", "delayed", "late"))
+    early_like = "early" in q
+
+    if not delay_like and not early_like:
+        return None
+    if delay_like and early_like:
+        return None
+    if _question_has_explicit_delay_or_early_threshold(question):
+        return None
+
+    metric_col = "fd_delayed_dur" if _mentions_fd_scope(q) else "dp_delayed_dur"
+    scope_label = "FD" if metric_col == "fd_delayed_dur" else "DP"
+    days = _DEFAULT_DELAY_SEVERITY_CAP_DAYS
+
+    if early_like:
+        return {
+            "column": metric_col,
+            "kind": "early",
+            "days": days,
+            "notice": (
+                f"No early threshold was specified, so I used the default {scope_label} early range: "
+                f"1 to {days} days early ({metric_col} from -{days} to -1)."
+            ),
+        }
+
+    return {
+        "column": metric_col,
+        "kind": "delay",
+        "days": days,
+        "notice": (
+            f"No delay threshold was specified, so I used the default {scope_label} delay range: "
+            f"1 to {days} days."
+        ),
+    }
+
+
+def _apply_default_delay_or_early_severity_cap(
+    df: pd.DataFrame, question: str
+) -> tuple[pd.DataFrame, Optional[str]]:
+    if df.empty:
+        return df, None
+
+    cap_spec = _infer_default_delay_or_early_severity_cap(question)
+    if not cap_spec:
+        return df, None
+
+    metric_col = str(cap_spec["column"])
+    if metric_col not in df.columns:
+        return df, None
+
+    metric = pd.to_numeric(df[metric_col], errors="coerce")
+    days = float(cap_spec["days"])
+
+    if cap_spec["kind"] == "early":
+        mask = metric.notna() & (metric < 0) & (metric >= -days)
+    else:
+        mask = metric.notna() & (metric > 0) & (metric <= days)
+
+    capped_df = df.loc[mask].copy()
+    if len(capped_df) >= len(df):
+        return df, None
+
+    return capped_df, str(cap_spec["notice"])
 
 
 def _extract_python_code(content: str) -> str:
@@ -425,6 +676,27 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 df = scoped_df
                 state.setdefault("notices", []).append(
                     f"Applied previous analytics result scope ({len(df)} rows)."
+                )
+
+            rows_before_default_cap = len(df)
+            df, default_cap_notice = _apply_default_analytics_time_cap(df, state, q)
+            if default_cap_notice:
+                state.setdefault("notices", []).append(default_cap_notice)
+                logger.info(
+                    "Applied default analytics time cap rows_before=%s rows_after=%s",
+                    rows_before_default_cap,
+                    len(df),
+                    extra={"step": "NODE:AnalyticsPlanner"},
+                )
+            rows_before_severity_cap = len(df)
+            df, severity_cap_notice = _apply_default_delay_or_early_severity_cap(df, q)
+            if severity_cap_notice:
+                state.setdefault("notices", []).append(severity_cap_notice)
+                logger.info(
+                    "Applied default delay/early severity cap rows_before=%s rows_after=%s",
+                    rows_before_severity_cap,
+                    len(df),
+                    extra={"step": "NODE:AnalyticsPlanner"},
                 )
 
         except Exception as e:

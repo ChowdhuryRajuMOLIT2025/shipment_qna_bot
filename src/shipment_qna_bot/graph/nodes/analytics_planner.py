@@ -485,11 +485,10 @@ ORDER BY best_eta_dp_date DESC;
             {"role": "user", "content": f"Question: {q}"},
         ]
 
-        # 3. Generate SQL
         generated_sql = ""
         try:
             if is_test_mode():
-                # Mock generation for tests
+
                 generated_sql = "SELECT count(*) as total FROM df"
             else:
                 chat = _get_chat()

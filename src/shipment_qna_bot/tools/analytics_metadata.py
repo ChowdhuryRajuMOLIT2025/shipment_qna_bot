@@ -1,3 +1,4 @@
+# src/shipment_qna_bot/tools/analytics_metadata.py
 """
 Centralized metadata for shipment analytics.
 This file defines the schema, types, and descriptions used for both
@@ -15,16 +16,16 @@ ANALYTICS_METADATA = {
         "desc": "Definition for destination service.",
         "type": "categorical",
     },
-    # "consignee_raw": {
-    #     "desc": "Definition for consignee raw.",
-    #     "type": "string"
-    # },
     "po_numbers": {"desc": "Customer Purchase Order numbers.", "type": "list"},
     "booking_numbers": {
         "desc": "Internal shipment booking identifiers.",
         "type": "list",
     },
     "fcr_numbers": {"desc": "Definition for fcr numbers.", "type": "list"},
+    "job_no": {
+        "desc": "Definition for job associated with the container.",
+        "type": "string",
+    },
     "obl_nos": {"desc": "Original Bill of Lading numbers (OBL).", "type": "list"},
     "load_port": {
         "desc": "The port where the cargo was initially loaded.",
@@ -57,6 +58,10 @@ ANALYTICS_METADATA = {
         "desc": "The name of the vessel for the final ocean leg.",
         "type": "string",
     },
+    "final_voyage_code": {
+        "desc": "The voyage code associated with the final voyage",
+        "type": "string",
+    },
     "true_carrier_scac_name": {
         "desc": "The primary carrier shipping line name.",
         "type": "string",
@@ -74,37 +79,14 @@ ANALYTICS_METADATA = {
         "desc": "Estimated Time of Arrival at Final Destination.",
         "type": "datetime",
     },
-    # "revised_eta_date": {
-    #     "desc": "Definition for revised eta date.",
-    #     "type": "datetime"
-    # },
-    # "predictive_eta_date": {
-    #     "desc": "Definition for predictive eta date.",
-    #     "type": "datetime"
-    # },
-    # "atd_lp_date": {
-    #     "desc": "Actual Time of Departure from Load Port.",
-    #     "type": "datetime"
-    # },
-    # "ata_flp_date": {
-    #     "desc": "Definition for ata flp date.",
-    #     "type": "datetime"
-    # },
+    "atd_lp_date": {
+        "desc": "Actual Time of Departure from Load Port.",
+        "type": "datetime",
+    },
+    "ata_flp_date": {"desc": "Definition for ata flp date.", "type": "datetime"},
     "atd_flp_date": {"desc": "Definition for atd flp date.", "type": "datetime"},
     "ata_dp_date": {
         "desc": "Actual Time of Arrival at Discharge Port (raw/source ATA).",
-        "type": "datetime",
-    },
-    "derived_ata_dp_date": {
-        "desc": "Canonical discharge-port arrival date. Default for DP arrival and delay analysis.",
-        "type": "datetime",
-    },
-    # "revised_eta_fd_date": {
-    #     "desc": "Definition for revised eta fd date.",
-    #     "type": "datetime"
-    # },
-    "predictive_dp_date": {
-        "desc": "Predictive Discharge Port Date (legacy/auxiliary).",
         "type": "datetime",
     },
     "cargo_receiveds_date": {
@@ -290,11 +272,11 @@ ANALYTICS_METADATA = {
         "type": "string",
     },
     "consignee_name": {"desc": "Definition for consignee name.", "type": "string"},
-    "optimal_ata_dp_date": {
-        "desc": "Legacy consolidated discharge-port arrival date (use derived_ata_dp_date as default).",
+    "best_eta_dp_date": {
+        "desc": "Legacy consolidated discharge-port arrival date, use best_eta_dp_date as default.",
         "type": "datetime",
     },
-    "optimal_eta_fd_date": {
+    "best_eta_fd_date": {
         "desc": "The best available date for arrival at final destination.",
         "type": "datetime",
     },
@@ -309,13 +291,9 @@ ANALYTICS_METADATA = {
         "type": "numeric",
     },
     "shipment_status": {
-        "desc": "Current phase of the shipment (e.g., DELIVERED, IN_OCEAN, READY_FOR_PICKUP).",
+        "desc": "Current phase of the shipment (e.g., EMPTY_CONTAINER_RETURNED, DELIVERED, IN_OCEAN_TRANSIT, AT_DP, AT_ORIGIN, IN_INLAND_TRANSIT, AT_LAST_CY, AT_TS, READY_FOR_PICKUP).",
         "type": "categorical",
     },
-    # "critical_dates_summary": {
-    #     "desc": "Definition for critical dates summary.",
-    #     "type": "string"
-    # },
     "delay_reason_summary": {
         "desc": "Definition for delay reason summary.",
         "type": "string",
@@ -324,31 +302,17 @@ ANALYTICS_METADATA = {
         "desc": "Definition for workflow gap flags.",
         "type": "list",
     },
-    # "milestones": {
-    #     "desc": "Definition for milestones.",
-    #     "type": "list"
-    # },
     "vessel_summary": {"desc": "Definition for vessel summary.", "type": "string"},
     "carrier_summary": {"desc": "Definition for carrier summary.", "type": "string"},
     "port_route_summary": {
         "desc": "Definition for port route summary.",
         "type": "string",
     },
-    "source_group": {"desc": "Definition for source group.", "type": "categorical"},
-    # "source_month_tag": {
-    #     "desc": "Definition for source month tag.",
-    #     "type": "categorical"
-    # },
-    # "combined_content": {
-    #     "desc": "Definition for combined content.",
-    #     "type": "string"
-    # }
 }
 
-# Technical columns that should NOT be visible to the LLM or used in UI reports
+# Technical columns that will NOT be visible to the LLM or used in UI reports
 INTERNAL_COLUMNS = [
     "carr_eqp_uid",
-    "job_no",
     "consignee_codes",
     "document_id",
     "combined_content",
@@ -378,5 +342,6 @@ COLUMN_SYNONYMS = {
     "ready_date": "cargo_ready_date",
     "po": "po_numbers",
     "container": "container_number",
+    "shipment": "container_number",
     "obl": "obl_nos",
 }

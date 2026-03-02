@@ -1,13 +1,16 @@
+# src/shipment_qna_bot/tools/azure_openai_chat.py
+
 import os
 from typing import Any, Dict, List, Optional
 
+# Load environment variables
 from dotenv import find_dotenv, load_dotenv
+
+load_dotenv(find_dotenv(), override=True)
+
 from openai import AzureOpenAI
 
 from shipment_qna_bot.utils.runtime import is_test_mode
-
-# Load environment variables
-load_dotenv(find_dotenv(), override=True)
 
 
 class AzureOpenAIChatTool:
@@ -28,7 +31,6 @@ class AzureOpenAIChatTool:
         self.timeout_s = float(os.getenv("AZURE_OPENAI_TIMEOUT", "60"))
         self.max_retries = int(os.getenv("AZURE_OPENAI_MAX_RETRIES", "2"))
 
-        # Support multiple naming conventions
         self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv(
             "ENDPOINT_URL"
         )
@@ -39,17 +41,16 @@ class AzureOpenAIChatTool:
         )
 
         if not self.api_key or not self.azure_endpoint or not self.deployment_name:
-            # Debug info to help user if it still fails
             missing = []
             if not self.api_key:
-                missing.append("AZURE_OPENAI_API_KEY")
+                missing.append("AZURE_OPENAI_API_KEY")  # type: ignore
             if not self.azure_endpoint:
-                missing.append("AZURE_OPENAI_ENDPOINT/ENDPOINT_URL")
+                missing.append("AZURE_OPENAI_ENDPOINT/ENDPOINT_URL")  # type: ignore
             if not self.deployment_name:
-                missing.append("AZURE_OPENAI_DEPLOYMENT/DEPLOYMENT_NAME")
+                missing.append("AZURE_OPENAI_DEPLOYMENT/DEPLOYMENT_NAME")  # type: ignore
 
             raise ValueError(
-                f"Missing Azure OpenAI credentials: {', '.join(missing)}. "
+                f"Missing Azure OpenAI credentials: {', '.join(missing)}. "  # type: ignore
                 "Please check your .env file."
             )
 
@@ -64,7 +65,7 @@ class AzureOpenAIChatTool:
     def chat_completion(
         self,
         messages: List[Dict[str, str]],
-        temperature: float = 0.0,
+        temperature: float = 0.01,
         max_tokens: int = 800,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[str] = None,
@@ -84,7 +85,7 @@ class AzureOpenAIChatTool:
             }
 
         try:
-            kwargs = {
+            kwargs = {  # type: ignore
                 "model": self.deployment_name,
                 "messages": messages,
                 "temperature": temperature,
@@ -97,25 +98,23 @@ class AzureOpenAIChatTool:
             if tool_choice:
                 kwargs["tool_choice"] = tool_choice
 
-            response = self.client.chat.completions.create(**kwargs)
-            choice = response.choices[0]
-            message = choice.message
+            response = self.client.chat.completions.create(**kwargs)  # type: ignore
+            choice = response.choices[0]  # type: ignore
+            message = choice.message  # type: ignore
 
-            result = {
-                "content": message.content or "",
+            result = {  # type: ignore
+                "content": message.content or "",  # type: ignore
                 "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
+                    "prompt_tokens": response.usage.prompt_tokens,  # type: ignore
+                    "completion_tokens": response.usage.completion_tokens,  # type: ignore
+                    "total_tokens": response.usage.total_tokens,  # type: ignore
                 },
             }
 
-            if message.tool_calls:
-                result["tool_calls"] = message.tool_calls
-                # Store the tool_call_id of the first call for convenience if needed,
-                # though usually we iterate over tool_calls.
-                result["tool_call_id"] = message.tool_calls[0].id
+            if message.tool_calls:  # type: ignore
+                result["tool_calls"] = message.tool_calls  # type: ignore
+                result["tool_call_id"] = message.tool_calls[0].id  # type: ignore
 
-            return result
+            return result  # type: ignore
         except Exception as e:
             raise RuntimeError(f"Azure OpenAI Chat Completion failed: {e}")

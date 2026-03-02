@@ -1,10 +1,12 @@
+# src/shipment_qna_bot/tools/pandas_engine.py
+
 import ast
 import contextlib
 import io
 import json
 import re
-import sys
-import threading
+import sys  # type: ignore
+import threading  # type: ignore
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -15,9 +17,9 @@ from shipment_qna_bot.logging.logger import logger
 
 class PandasAnalyticsEngine:
     """
-    Safely executes Python/Pandas code on a provided DataFrame.
-    Use this to perform aggregations, filtering, and detailed analysis that
-    vector search cannot handle (e.g., "average weight", "count delays by port", "delay to port").
+    Safely executes Pandas code on a provided df.
+    Use to perform aggregations, filtering, and detailed analysis that
+    Search cannot handle analytical user query (e.g., "average weight", "count delays by port", "delay to port").
     """
 
     def __init__(self):
@@ -29,7 +31,9 @@ class PandasAnalyticsEngine:
             "numpy": np,
             "json": json,
         }
-        self.allowed_import_roots = set()  # NO IMPORTS ALLOWED AT RUNTIME
+        self.allowed_import_roots = (  # type: ignore
+            set()
+        )  # NO IMPORTS ALLOWED AT RUNTIME   # type: ignore
         self.forbidden_attrs = {
             "__import__",
             "__builtins__",
@@ -60,27 +64,27 @@ class PandasAnalyticsEngine:
             return f"Syntax Error in generated code: {e}"
 
         class SecurityVisitor(ast.NodeVisitor):
-            def __init__(self, forbidden_attrs):
+            def __init__(self, forbidden_attrs):  # type: ignore
                 self.forbidden_attrs = forbidden_attrs
                 self.error = None
 
-            def visit_Import(self, node):
+            def visit_Import(self, node):  # type: ignore
                 self.error = "Import statements are strictly prohibited."
 
-            def visit_ImportFrom(self, node):
+            def visit_ImportFrom(self, node):  # type: ignore
                 self.error = "Import statements are strictly prohibited."
 
-            def visit_Attribute(self, node):
+            def visit_Attribute(self, node):  # type: ignore
                 if node.attr in self.forbidden_attrs or node.attr.startswith("__"):
                     self.error = f"Access to attribute '{node.attr}' is forbidden."
                 self.generic_visit(node)
 
-            def visit_Name(self, node):
+            def visit_Name(self, node):  # type: ignore
                 if node.id in self.forbidden_attrs:
                     self.error = f"Use of '{node.id}' is forbidden."
                 self.generic_visit(node)
 
-            def visit_Call(self, node):
+            def visit_Call(self, node):  # type: ignore
                 if isinstance(node.func, ast.Name):
                     if node.func.id in self.forbidden_attrs:
                         self.error = f"Function call '{node.func.id}' is forbidden."
@@ -91,7 +95,6 @@ class PandasAnalyticsEngine:
         if visitor.error:
             return visitor.error
 
-        # Additional regex checks for things AST might miss in strings or edge cases
         if re.search(r"(__class__|__mro__|__subclasses__|__init__)", code):
             return "Detected suspicious attribute access (dunder methods)."
 
@@ -136,11 +139,11 @@ class PandasAnalyticsEngine:
             return str(v)
         if isinstance(v, dict):
             return {
-                str(k): PandasAnalyticsEngine._to_json_safe_value(val)
-                for k, val in v.items()
+                str(k): PandasAnalyticsEngine._to_json_safe_value(val)  # type: ignore
+                for k, val in v.items()  # type: ignore
             }
         if isinstance(v, (list, tuple, set)):
-            return [PandasAnalyticsEngine._to_json_safe_value(x) for x in v]
+            return [PandasAnalyticsEngine._to_json_safe_value(x) for x in v]  # type: ignore
         if hasattr(v, "item"):
             try:
                 return v.item()
@@ -161,22 +164,20 @@ class PandasAnalyticsEngine:
             - 'success': Bool
         """
         code = self._strip_code_fences(code)
-        logger.info(f"Pandas Engine executing code on DF with shape {df.shape}")
-        logger.info(f"Pandas Code:\n{code}")
+        logger.info(f"pd Engine running on df with shape {df.shape}")
+        logger.info(f"pdCode:\n{code}")
 
         preflight_error = self._preflight_validate_code(code)
         if preflight_error:
-            logger.warning("Pandas preflight validation failed: %s", preflight_error)
+            logger.warning("pd preflight validation failed: %s", preflight_error)
             return {
                 "success": False,
                 "error": preflight_error,
                 "output": "",
             }
 
-        # Trap stdout
         output_buffer = io.StringIO()
 
-        # Use df directly. The caller (AnalyticsPlanner) already provides a filtered copy.
         working_df = df
         for col in self._extract_str_columns(code):
             if col not in working_df.columns:
@@ -186,7 +187,7 @@ class PandasAnalyticsEngine:
                 working_df[col] = series.astype("string")
 
         # Execution context
-        local_scope = {
+        local_scope = {  # type: ignore
             "df": working_df,
             "pd": pd,
             "np": np,
@@ -197,7 +198,7 @@ class PandasAnalyticsEngine:
         try:
             # Create a restricted globals bridge
             # We explicitly pass our allowed modules into the local scope too
-            safe_globals = {
+            safe_globals = {  # type: ignore
                 "__builtins__": {
                     "print": print,
                     "range": range,
@@ -225,19 +226,17 @@ class PandasAnalyticsEngine:
             }
 
             with contextlib.redirect_stdout(output_buffer):
-                # exec with timeout (simulated as we can't easily kill thread in pure python without signals)
-                # For now, we use a simple try/except and reliance on AST + limited builtins.
-                exec(code, safe_globals, local_scope)
+                exec(code, safe_globals, local_scope)  # type: ignore
 
             output = output_buffer.getvalue()
-            result_val = local_scope.get("result")
+            result_val = local_scope.get("result")  # type: ignore
             result_type = (
-                type(result_val).__name__ if result_val is not None else "None"
+                type(result_val).__name__ if result_val is not None else "None"  # type: ignore
             )
 
             filtered_rows = None
             filtered_preview = ""
-            df_filtered = local_scope.get("df_filtered")
+            df_filtered = local_scope.get("df_filtered")  # type: ignore
             if isinstance(df_filtered, pd.DataFrame):
                 df_filtered = self._sort_df_latest_first(df_filtered)
                 local_scope["df_filtered"] = df_filtered
@@ -262,8 +261,6 @@ class PandasAnalyticsEngine:
                     )
                     filtered_preview = preview_df.to_markdown(index=False)
 
-            # If result is a dataframe or series, convert to something json-serializable/string
-            # for the agent to consume easily
             result_rows: Optional[List[Dict[str, Any]]] = None
             result_columns: Optional[List[str]] = None
             result_value: Any = None
@@ -296,13 +293,13 @@ class PandasAnalyticsEngine:
                 result_export = table_df.to_markdown(index=False)
             elif isinstance(result_val, dict):
                 result_value = self._to_json_safe_value(result_val)
-                result_export = str(result_val)
+                result_export = str(result_val)  # type: ignore
             elif isinstance(result_val, (list, tuple, set)):
                 result_value = self._to_json_safe_value(result_val)
-                result_export = str(result_val)
+                result_export = str(result_val)  # type: ignore
             else:
                 result_value = self._to_json_safe_value(result_val)
-                result_export = str(result_val) if result_val is not None else ""
+                result_export = str(result_val) if result_val is not None else ""  # type: ignore
 
             # If no result variable, rely on print output
             final_answer = result_export if result_export else output

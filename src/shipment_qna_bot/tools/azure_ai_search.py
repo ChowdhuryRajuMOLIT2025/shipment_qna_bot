@@ -17,8 +17,6 @@ from azure.search.documents import SearchClient
 from shipment_qna_bot.security.rls import build_search_filter
 from shipment_qna_bot.utils.runtime import is_test_mode
 
-# from openai import AzureOpenAI
-
 try:
     from azure.search.documents.models import VectorizedQuery
 except Exception as err:
@@ -29,7 +27,7 @@ class AzureAISearchTool:
     """
     Hybrid search = BM25 keyword(semantic search) + vector query.
     ALWAYS applies consignee filter (RLS).
-    NEVER show consignee_code_ids in the response.
+    NEVER show consignee_code_ids, document_id in the response.
     """
 
     def __init__(self) -> None:
@@ -62,7 +60,6 @@ class AzureAISearchTool:
             index_name=index_name,
         )
 
-        # configured field names in az-index
         self._id_field = os.getenv("AZURE_SEARCH_ID_FIELD", "document_id")
         self._content_field = os.getenv("AZURE_SEARCH_CONTENT_FIELD", "chunk")
         self._container_field = os.getenv(
@@ -70,7 +67,6 @@ class AzureAISearchTool:
         )
         self._metadata_field = os.getenv("AZURE_SEARCH_METADATA_FIELD", "metadata_json")
 
-        # code-only field for consignee filter- RLS
         self._consignee_field = os.getenv(
             "AZURE_SEARCH_CONSIGNEE_FIELD", "consignee_code_ids"
         )
@@ -78,16 +74,13 @@ class AzureAISearchTool:
             os.getenv("AZURE_SEARCH_CONSIGNEE_IS_COLLECTION", "true").lower() == "true"
         )
 
-        # vector field
         self._vector_field = os.getenv("AZURE_SEARCH_VECTOR_FIELD", "content_vector")
 
     def _consignee_filter(self, codes: List[str]) -> str:
         # Uses search.in for matching against a list.
         # For a simple STRING field: search.in(field, 'a,b', ',')
-        # For a COLLECTION field, best practice is to store it as collection and filter with any().
-        # We support both via env switch.
+        # For a COLLECTION field, store it as collection and filter with any().
         if not codes:
-            # No scope? We fail closed.
             return "false"
 
         clean_codes = [c.strip() for c in codes if c and c.strip()]
@@ -95,14 +88,14 @@ class AzureAISearchTool:
             return "false"
 
         # Collection field:
-        # consignee_code_ids/any(c: search.in(c, '0000866,234567', ','))
+        # consignee_code_ids/any(c: search.in(c, '0000123,7234567', ','))
         if self._consignee_is_collection:
             return build_search_filter(
                 allowed_codes=clean_codes, field_name=self._consignee_field
             )
 
         # Legacy: plain string field (e.g., `consignee_codes` as a single string)
-        # Escaping single quotes to keep OData happy
+        # Escaping single quotes to keep OData clean
         safe_codes = [c.replace("'", "''") for c in clean_codes]
         joined = ",".join(safe_codes)
         return f"search.in({self._consignee_field}, '{joined}', ',')"
@@ -140,7 +133,7 @@ class AzureAISearchTool:
         final_filter = (
             base_filter if not extra_filter else f"({base_filter}) and ({extra_filter})"
         )
-        select = [
+        select = [  # type: ignore
             self._id_field,
             self._content_field,
             self._container_field,
@@ -155,9 +148,9 @@ class AzureAISearchTool:
             "order_by": order_by,
         }
 
-        # Enable Semantic Search if a specific query is provided
         if query_text and query_text != "*":
             kwargs["query_type"] = "semantic"
+            # kwargs["semantic_configuration_name"] = "vec-sem-ana-semantic"
             kwargs["semantic_configuration_name"] = "default"
 
         if vector is not None and vector:
@@ -173,17 +166,17 @@ class AzureAISearchTool:
                 )
             ]
 
-        results = self._client.search(**kwargs)
+        results = self._client.search(**kwargs)  # type: ignore
 
         hits: List[Dict[str, Any]] = []
-        for r in results:
-            doc = dict(r)
+        for r in results:  # type: ignore
+            doc = dict(r)  # type: ignore
 
             # Extract key fields using configured names
-            container_number = doc.get(self._container_field)
+            container_number = doc.get(self._container_field)  # type: ignore
             if not container_number:
                 # Fallback check inside metadata_json if top-level missing
-                raw_meta = doc.get(self._metadata_field)
+                raw_meta = doc.get(self._metadata_field)  # type: ignore
                 if isinstance(raw_meta, str):
                     try:
                         import json
@@ -193,29 +186,29 @@ class AzureAISearchTool:
                     except:
                         pass
                 elif isinstance(raw_meta, dict):
-                    container_number = raw_meta.get("container_number")
+                    container_number = raw_meta.get("container_number")  # type: ignore
 
-            hit = {
-                "doc_id": doc.get(self._id_field),
+            hit = {  # type: ignore
+                "doc_id": doc.get(self._id_field),  # type: ignore
                 "container_number": container_number,
-                "content": doc.get(self._content_field),
-                "score": doc.get("@search.score"),
-                "reranker_score": doc.get("@search.reranker_score"),
+                "content": doc.get(self._content_field),  # type: ignore
+                "score": doc.get("@search.score"),  # type: ignore
+                "reranker_score": doc.get("@search.reranker_score"),  # type: ignore
             }
-            # Include all other fields except vectors to avoid bloat
-            for k, v in doc.items():
+            # Include all other fields except vectors to avoid puffed
+            for k, v in doc.items():  # type: ignore
                 if k not in hit and k not in {
                     self._vector_field,
                     self._consignee_field,
                 }:
                     hit[k] = v
 
-            hits.append(hit)
+            hits.append(hit)  # type: ignore
 
         return {
             "hits": hits,
             "count": results.get_count() if include_total_count else None,
-            "facets": results.get_facets() if facets else None,
+            "facets": results.get_facets() if facets else None,  # type: ignore
         }
 
     def upload_documents(self, documents: List[Dict[str, Any]]) -> None:
@@ -223,7 +216,7 @@ class AzureAISearchTool:
         Uploads a batch of documents to the Azure Search index.
         """
         try:
-            results = self._client.upload_documents(documents=documents)
+            results = self._client.upload_documents(documents=documents)  # type: ignore
             failed = [r for r in results if not r.succeeded]
             if failed:
                 raise RuntimeError(
@@ -238,21 +231,17 @@ class AzureAISearchTool:
         Deletes ALL documents from the index. Use with caution.
         """
         try:
-            # Azure Search doesn't have a simple "delete all", so we fetch all keys and delete.
-            # However, for RAG scenarios, sometimes it's easier to just delete and recreate the index,
-            # but here we'll try to delete docs by key if they exist.
-            # A more efficient way for large indexes is checking the count and batching.
-            results = self._client.search(
+            results = self._client.search(  # type: ignore
                 search_text="*", select=[self._id_field], top=1000
             )
-            keys_to_delete = [
+            keys_to_delete = [  # type: ignore
                 {"@search.action": "delete", self._id_field: r[self._id_field]}
-                for r in results
+                for r in results  # type: ignore
             ]
 
             if keys_to_delete:
-                self._client.upload_documents(documents=keys_to_delete)
-                print(f"Deleted {len(keys_to_delete)} documents from index.")
+                self._client.upload_documents(documents=keys_to_delete)  # type: ignore
+                print(f"Deleted {len(keys_to_delete)} documents from index.")  # type: ignore
             else:
                 print("Index already empty.")
         except Exception as e:

@@ -132,6 +132,10 @@ def _wants_chart(question: str) -> bool:
         "by port",
         "top 5",
         "top 10",
+        "top five",
+        "top ten",
+        "summary of",
+        "comparison",
     ]
     return any(term in lowered for term in chart_terms)
 
@@ -502,7 +506,7 @@ ORDER BY best_eta_dp_date DESC;
             return state
 
         # 4. Execute Code
-        if not generated_code:
+        if not generated_sql:
             state.setdefault("errors", []).append("LLM produced no code.")
             state["answer_text"] = (
                 "I couldn't generate a valid analytics query for that question. "

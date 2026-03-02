@@ -153,7 +153,7 @@ def intent_node(state: GraphState) -> GraphState:
             "   - 'clarification': Use IF AND ONLY IF the user's query is too vague, ambiguous, or lacks necessary context.\n"
             "   - 'greeting': Use for 'hi', 'hello', etc.\n"
             "   - 'company_overview': Use for questions about the company itself.\n"
-            "   - 'end': Use ONLY for explicit farewells.\n"
+            "   - 'end': Use ONLY for explicit farewells (like 'bye', 'goodbye', 'close session'). DO NOT use for general praise or 'thank you'.\n"
             "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'weather', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
             f"{weather_instruction}"
             "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"

@@ -348,7 +348,11 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 context_str += f"NOTE: {n}\n"
 
         # If no info at all
-        if not hits and not (analytics and (analytics.get("count") or 0) > 0):
+        if (
+            not hits
+            and not (analytics and (analytics.get("count") or 0) > 0)
+            and not state.get("table_spec")
+        ):
             state["answer_text"] = (
                 "I couldn't find any information matching your request within your authorized scope."
             )

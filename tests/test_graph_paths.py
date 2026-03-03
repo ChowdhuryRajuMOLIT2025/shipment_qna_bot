@@ -1,6 +1,6 @@
 import pytest
 
-from shipment_qna_bot.graph.builder import graph_app
+from shipment_qna_bot.graph.builder import get_graph
 from shipment_qna_bot.graph.state import GraphState
 
 
@@ -8,7 +8,7 @@ def test_graph_compilation():
     """
     Verifies that the graph compiles without errors.
     """
-    assert graph_app is not None
+    assert get_graph() is not None
 
 
 def test_graph_routing_eta():
@@ -28,7 +28,7 @@ def test_graph_routing_eta():
     # We need to configure the thread for the checkpointer
     config = {"configurable": {"thread_id": "test_thread"}}
 
-    result = graph_app.invoke(initial_state, config=config)
+    result = get_graph().invoke(initial_state, config=config)
 
     assert result["normalized_question"] == "what is the eta for container abcd1234567?"
     assert result["intent"] == "retrieval"
@@ -49,6 +49,6 @@ def test_graph_routing_analytics():
     }
     config = {"configurable": {"thread_id": "test_thread_2"}}
 
-    result = graph_app.invoke(initial_state, config=config)
+    result = get_graph().invoke(initial_state, config=config)
 
     assert result["intent"] == "analytics"

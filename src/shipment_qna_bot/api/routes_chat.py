@@ -42,14 +42,11 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
       evidence items and (optionally, in future) chart/table data.
     """
 
-    # 1) Conversation/session handling
-    # ensure payload always have convesation_id and its always has a value associated with it
-    # server generates conversation id if missing, check session first, then payload, then generate.
-    conversation_id = (
-        payload.conversation_id
-        or request.session.get("conversation_id")
-        or str(uuid.uuid4())
-    )
+    # 1) Conversation/session handling: Session ID is the source of truth for isolation.
+    # Prioritize existing session, then fallback to payload if valid, else generate.
+    # To prevent collisions, we ensure the 'payload' id doesn't hijack an existing session.
+    session_id = request.session.get("conversation_id")
+    conversation_id = session_id or payload.conversation_id or str(uuid.uuid4())
 
     # Store in session for future requests
     request.session["conversation_id"] = conversation_id
@@ -81,9 +78,9 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     request.state.consignee_codes = allowed_consignee_codes
 
     logger.info(
-        "Normalized consignee_codes from payload=%s -> allowed_scope=%s",
-        raw_consignee_codes,
-        allowed_consignee_codes,
+        "Deriving effective consignee scope from %d payload codes -> allowed_scope count=%d",
+        len(raw_consignee_codes),
+        len(allowed_consignee_codes),
         extra={"step": "API:/chat"},
     )
 
@@ -96,9 +93,9 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     )
 
     logger.info(
-        "Received chat request: question='%s...' consignees=%s",
-        payload.question,
-        allowed_consignee_codes,
+        "Received chat request: question_len=%d consignees_count=%d",
+        len(payload.question),
+        len(allowed_consignee_codes),
         extra={"step": "API:/chat"},
     )
 

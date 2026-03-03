@@ -18,9 +18,15 @@ from shipment_qna_bot.logging.middleware_log import RequestLoggingMiddleware
 
 app = FastAPI(title="MCS Shipment Chat Bot")
 
-# Persistent session secret key from environment or fallback (Warning: fallback is insecure)
-# In production, SHIPMENT_QNA_BOT_SESSION_SECRET must be set.
-_SESSION_SECRET = os.getenv("SHIPMENT_QNA_BOT_SESSION_SECRET", str(uuid.uuid4()))
+# Stable session secret for development. Must be set in production via env var.
+_SESSION_SECRET = os.getenv(
+    "SHIPMENT_QNA_BOT_SESSION_SECRET", "dev_secret_fallback_12345"
+)
+if _SESSION_SECRET == "dev_secret_fallback_12345":
+    print(
+        "WARNING: Using insecure session secret fallback. Set SHIPMENT_QNA_BOT_SESSION_SECRET in production."
+    )
+
 _APP_INSTANCE_ID = str(uuid.uuid4())
 _APP_STARTED_AT = datetime.now(timezone.utc).isoformat()
 

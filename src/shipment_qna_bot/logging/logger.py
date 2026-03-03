@@ -85,12 +85,9 @@ def set_log_context(
     """
     Updates the context variables for logging.
     """
-    if conversation_id:
-        conversation_id_ctx.set(conversation_id)
-    if consignee_codes:
-        consignee_scope_ctx.set(consignee_codes)
-    if trace_id:
-        trace_id_ctx.set(trace_id)
+    conversation_id_ctx.set(conversation_id)
+    consignee_scope_ctx.set(consignee_codes)
+    trace_id_ctx.set(trace_id)
 
     # Note: intent is passed but not currently stored in a dedicated context var
     # We could add an intent_ctx if needed, or rely on extra_data in node logs.

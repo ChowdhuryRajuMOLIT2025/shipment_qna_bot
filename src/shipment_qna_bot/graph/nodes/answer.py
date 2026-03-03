@@ -262,7 +262,17 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
             if os.path.exists(ready_ref_path):
                 with open(ready_ref_path, "r") as f:
-                    ready_ref_content = f.read()
+                    full_ref = f.read()
+                    # Prune: Only keep sections 0 (Style) and 1 (Schema)
+                    # The scenario-based logic (Section 2+) is for code-gen, not answer synthesis.
+                    style_match = re.search(
+                        r"(## 0\. Response Style.*?)## 2\.", full_ref, re.DOTALL
+                    )
+                    if style_match:
+                        ready_ref_content = style_match.group(1).strip()
+                    else:
+                        # Fallback: take first 100 lines if regex fails
+                        ready_ref_content = "\n".join(full_ref.splitlines()[:100])
         except Exception:
             pass  # Fail silently/gracefully
 
@@ -311,18 +321,26 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 ]
 
                 for f in priority_fields:
-                    if f in hit:
-                        context_str += f"{f}: {hit[f]}\n"
+                    val = hit.get(f)
+                    if (
+                        val is not None
+                        and str(val).strip()
+                        and str(val).lower() not in ["nan", "nat", "none"]
+                    ):
+                        context_str += f"{f}: {val}\n"
 
-                # Always include full content for grounding if available
+                # Truncate full content to save tokens
                 if "content" in hit:
-                    context_str += f"Content: {hit['content']}\n"
+                    content_snippet = str(hit["content"])[:500]
+                    if len(str(hit["content"])) > 500:
+                        content_snippet += "... [truncated]"
+                    context_str += f"Content: {content_snippet}\n"
 
                 # Add metadata_json content intelligently
                 if "metadata_json" in hit:
                     try:
                         m = json.loads(str(hit["metadata_json"]))
-                        if "milestones" in m:
+                        if "milestones" in m and isinstance(m["milestones"], list):
                             context_str += (
                                 f"Milestones: {json.dumps(m['milestones'])}\n"
                             )

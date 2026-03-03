@@ -7,7 +7,7 @@ import sys
 # Ensure src is in python path
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-from shipment_qna_bot.graph.builder import graph_app
+from shipment_qna_bot.graph.builder import get_graph
 from shipment_qna_bot.logging.logger import logger
 
 
@@ -28,7 +28,7 @@ async def test_trace(question: str, consignee_codes: list[str]):
     # Execute graph
     final_state = None
     try:
-        final_state = await graph_app.ainvoke(initial_state, config=config)
+        final_state = await get_graph().ainvoke(initial_state, config=config)
     except Exception as e:
         import traceback
 

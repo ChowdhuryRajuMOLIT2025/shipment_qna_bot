@@ -110,8 +110,18 @@ def build_graph():
     return workflow.compile(checkpointer=checkpointer)
 
 
-# Singleton instance
-graph_app = build_graph()
+# Lazy-loaded singleton
+_graph_app = None
+
+
+def get_graph():
+    """
+    Returns the compiled graph, building it only once.
+    """
+    global _graph_app
+    if _graph_app is None:
+        _graph_app = build_graph()
+    return _graph_app
 
 
 def run_graph(input_state: dict) -> dict:
@@ -163,4 +173,4 @@ def run_graph(input_state: dict) -> dict:
     # In LangGraph, if we use add_messages, we just provide the new message.
     input_state["messages"] = [HumanMessage(content=input_state["question_raw"])]
 
-    return graph_app.invoke(input_state, config=config)
+    return get_graph().invoke(input_state, config=config)

@@ -12,8 +12,7 @@ from shipment_qna_bot.graph.state import RetrievalPlan  # type: ignore
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
-from shipment_qna_bot.tools.azure_openai_embeddings import \
-    AzureOpenAIEmbeddingsClient
+from shipment_qna_bot.tools.azure_openai_embeddings import AzureOpenAIEmbeddingsClient
 from shipment_qna_bot.tools.news_tool import NewsTool
 from shipment_qna_bot.tools.weather_tool import WeatherTool
 from shipment_qna_bot.utils.config import is_news_enabled, is_weather_enabled

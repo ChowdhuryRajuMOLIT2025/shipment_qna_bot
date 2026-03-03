@@ -7,9 +7,13 @@ from fastapi import APIRouter, Request
 
 from shipment_qna_bot.graph.builder import run_graph
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.models.schemas import (ChartSpec, ChatAnswer,
-                                             ChatRequest, EvidenceItem,
-                                             TableSpec)
+from shipment_qna_bot.models.schemas import (
+    ChartSpec,
+    ChatAnswer,
+    ChatRequest,
+    EvidenceItem,
+    TableSpec,
+)
 from shipment_qna_bot.security.scope import resolve_allowed_scope
 
 router = APIRouter(tags=["chat"], prefix="/api")
@@ -18,8 +22,7 @@ router = APIRouter(tags=["chat"], prefix="/api")
 @router.get("/session")
 async def get_session(request: Request):
     """
-    Returns the current session's state (consignee_codes and conversation_id).
-    This allows the frontend to sync after a page refresh or server restart.
+    I'll return the current session state so the frontend stays in sync after refreshes.
     """
     return {
         "consignee_codes": request.session.get("consignee_codes", []),
@@ -30,37 +33,28 @@ async def get_session(request: Request):
 @router.post("/chat", response_model=ChatAnswer)
 async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     """
-    Main `chat` endpoint to handle chat requests related to shipment queries.
-
-    Responsibilities (current stage):
-    - Ensure we always have a conversation_id (for session/memory).
-    - Normalize and log consignee codes coming from the payload.
-    - Derive an *effective* consignee scope via `resolve_allowed_scope` (RLS plumbing hook).
-    - Set structured logging context (conversation_id, consignee scope, intent).
-    - Call the LangGraph runner with a clean initial state.
-    - Map graph result into the public `ChatAnswer` schema, including
-      evidence items and (optionally, in future) chart/table data.
+    I handle all incoming chat requests for shipment queries here.
+    What I do:
+    - I make sure there's always a valid conversation ID.
+    - I derive the effective consignee scope for security.
+    - I set up the logging context so I can trace every request.
+    - I run the LangGraph and return the final answer, including any charts or tables.
     """
 
-    # 1) Conversation/session handling: Session ID is the source of truth for isolation.
-    # Prioritize existing session, then fallback to payload if valid, else generate.
-    # To prevent collisions, we ensure the 'payload' id doesn't hijack an existing session.
+    # I prioritize existing session IDs to prevent cross-user collisions.
     session_id = request.session.get("conversation_id")
     conversation_id = session_id or payload.conversation_id or str(uuid.uuid4())
 
     # Store in session for future requests
     request.session["conversation_id"] = conversation_id
 
-    # store in request.state so middleware can use it for RESPONSE logs
+    # I'll store the ID in the request state so I can use it in response logs later.
     request.state.conversation_id = conversation_id
 
-    # 2) Derive effective consignee scope (RLS plumbing)
-    # Raw codes from payload are already normalized by ChatRequest validator.
+    # I'm deriving the effective consignee scope here for row-level security.
     raw_consignee_codes: List[str] = payload.consignee_codes
 
-    # In a real deployment, this would come from auth/token/headers.
-    # For now, we treat it as optional and let `resolve_allowed_scope`
-    # behave as a pure normalizer, but wiring is in place for future RLS.
+    # I'll treat the user identity as optional for now, but I've left the hook for real auth.
     user_identity = request.headers.get("X-User-Identity")
 
     allowed_consignee_codes = resolve_allowed_scope(
@@ -72,9 +66,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     if raw_consignee_codes:
         request.session["consignee_codes"] = allowed_consignee_codes
 
-    # Make the effective scope visible to middleware logging.
-    # This is what we actually use for tools/RLS, not the raw payload.
-    # Use effective scope for logging/middleware (never raw payload codes).
+    # I'm making the effective scope visible to the logger.
     request.state.consignee_codes = allowed_consignee_codes
 
     logger.info(
@@ -84,8 +76,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         extra={"step": "API:/chat"},
     )
 
-    # set and update logging context for each request early for the route
-    # inten will be set later once graph classifies it
+    # I'll set the logging context early, though I'll update the intent later.
     set_log_context(
         conversation_id=conversation_id,
         consignee_codes=allowed_consignee_codes,
@@ -99,9 +90,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         extra={"step": "API:/chat"},
     )
 
-    # 4) Run the langGraph with a clean initial state
-    # important we pass *effective* consignee codes only, the graph/tooling
-    # must never see unvalidated raw payload values.
+    # I'm passing only the validated consignee codes to the graph to keep things secure.
 
     # TODO: call LangGraph execution here.
     # For now, stub response to verify logs pipeline.
@@ -138,13 +127,12 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # GPT-4o pricing (approximate)
     cost_usd = (prompt_tokens * 0.000005) + (completion_tokens * 0.000015)
 
-    # 5) Sync intent into logs + middleware response
+    # I'm syncing the classified intent back into the logs.
     final_intent = result.get("intent", "-")
     request.state.intent = final_intent
     set_log_context(intent=final_intent)
 
-    # If the user wants to end the conversation, clear the session
-    # This resets both consignee_codes and conversation_id
+    # If I see an 'end' intent, I'll clear the session to reset the conversation.
     if final_intent == "end":
         request.session.clear()
         logger.info("Session cleared due to 'end' intent.", extra={"step": "API:/chat"})
@@ -165,7 +153,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         extra={"step": "API:/chat"},
     )
 
-    # 6) Build evidence items list from citations- convert evidence
+    # I'm building the evidence items from the citations I received.
     raw_citations = result.get("citations", []) or []
     evidence_items: List[EvidenceItem] = []
     # evidence_items = []
@@ -178,7 +166,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
             # keep response stable even if one evidence item fails to parse
             continue
 
-    # 7) Optional analytics: chart and table
+    # I'll optionally include charts and tables if they're in the result.
     chart_model: ChartSpec | None = None
     raw_chart_spec = result.get("chart_spec")
     if isinstance(raw_chart_spec, dict) and raw_chart_spec:
@@ -209,7 +197,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
             )
             table_model = None
 
-    # 8) Build final response
+    # I'll bundle everything into the final response now.
     from shipment_qna_bot.models.schemas import ResponseMetadata
 
     response = ChatAnswer(

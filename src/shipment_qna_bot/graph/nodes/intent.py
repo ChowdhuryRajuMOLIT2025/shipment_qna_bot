@@ -1,7 +1,8 @@
 from langchain_core.messages import AIMessage
 
-from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
-    should_handle_overview
+from shipment_qna_bot.graph.nodes.static_greet_info_handler import (
+    should_handle_overview,
+)
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger

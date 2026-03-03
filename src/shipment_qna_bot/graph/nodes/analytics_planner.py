@@ -4,8 +4,10 @@ from typing import Any, Dict, List, Optional  # type: ignore
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.tools.analytics_metadata import (ANALYTICS_METADATA,
-                                                       INTERNAL_COLUMNS)
+from shipment_qna_bot.tools.analytics_metadata import (
+    ANALYTICS_METADATA,
+    INTERNAL_COLUMNS,
+)
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.duckdb_engine import DuckDBAnalyticsEngine

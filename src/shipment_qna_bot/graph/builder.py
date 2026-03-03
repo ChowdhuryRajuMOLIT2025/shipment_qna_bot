@@ -4,8 +4,7 @@ from datetime import datetime, timezone
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from shipment_qna_bot.graph.nodes.analytics_planner import \
-    analytics_planner_node
+from shipment_qna_bot.graph.nodes.analytics_planner import analytics_planner_node
 from shipment_qna_bot.graph.nodes.answer import answer_node
 from shipment_qna_bot.graph.nodes.clarification import clarification_node
 from shipment_qna_bot.graph.nodes.extractor import extractor_node
@@ -15,15 +14,16 @@ from shipment_qna_bot.graph.nodes.normalizer import normalize_node
 from shipment_qna_bot.graph.nodes.planner import planner_node
 from shipment_qna_bot.graph.nodes.retrieve import retrieve_node
 from shipment_qna_bot.graph.nodes.router import route_node
-from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
-    static_greet_info_node
+from shipment_qna_bot.graph.nodes.static_greet_info_handler import (
+    static_greet_info_node,
+)
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.tools.date_tools import get_today_date
 
 
 def should_continue(state: GraphState):
     """
-    Conditional edge to determine if we should retry retrieval or finish.
+    I'll decide here if I should retry the retrieval or just finish.
     """
     if state.get("is_satisfied"):
         return "end"
@@ -43,7 +43,7 @@ def should_continue(state: GraphState):
 
 def build_graph():
     """
-    Constructs the shipment QnA graph.
+    I'm building the shipment QnA graph structure here.
     """
     workflow = StateGraph(GraphState)
 
@@ -103,8 +103,7 @@ def build_graph():
         },
     )
 
-    # --- Checkpointer ---
-    # Using MemorySaver for in-memory durable execution (Session scope)
+    # I'm using MemorySaver to keep the conversation state in memory.
     checkpointer = MemorySaver()
 
     return workflow.compile(checkpointer=checkpointer)
@@ -116,7 +115,7 @@ _graph_app = None
 
 def get_graph():
     """
-    Returns the compiled graph, building it only once.
+    I'll return the compiled graph, but I'm only building it once.
     """
     global _graph_app
     if _graph_app is None:
@@ -126,7 +125,7 @@ def get_graph():
 
 def run_graph(input_state: dict) -> dict:
     """
-    Synchronous wrapper to run the graph.
+    I'm wrapping the graph execution in this synchronous runner.
     """
     thread_id = input_state.get("conversation_id", "default")
     config = {"configurable": {"thread_id": thread_id}}
@@ -149,7 +148,7 @@ def run_graph(input_state: dict) -> dict:
     if "now_utc" not in input_state:
         input_state["now_utc"] = datetime.now(timezone.utc).isoformat()
 
-    # Reset transient fields to avoid leaking prior turn state from the checkpointer.
+    # I clear these fields every turn so I don't leak state from previous questions.
     input_state.setdefault("retrieval_plan", None)
     input_state.setdefault("hits", [])
     input_state.setdefault("idx_analytics", None)
@@ -166,11 +165,9 @@ def run_graph(input_state: dict) -> dict:
     input_state.setdefault("analytics_attempt_count", None)
     input_state.setdefault("analytics_last_error", None)
 
-    # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage
 
-    # We always append the current question to the message history if it's a new turn.
-    # In LangGraph, if we use add_messages, we just provide the new message.
+    # I always append the new question to the history.
     input_state["messages"] = [HumanMessage(content=input_state["question_raw"])]
 
     return get_graph().invoke(input_state, config=config)

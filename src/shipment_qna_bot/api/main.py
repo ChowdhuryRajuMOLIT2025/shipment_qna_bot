@@ -1,9 +1,5 @@
-# src/shipment_qna_bot/api/main.py
-#################
-# call sign for running the app
+# I use this to run the app locally:
 # uv run uvicorn shipment_qna_bot.api.main:app --reload --host=127.0.0.1 --port=8000
-# https://shipmentqnabot-dgh3cjgzdzbyc3f0.eastus2-01.azurewebsites.net/
-#################
 import os
 import uuid
 from datetime import datetime, timezone
@@ -12,13 +8,12 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from shipment_qna_bot.api.routes_chat import \
-    router as chat_router  # type: ignore
+from shipment_qna_bot.api.routes_chat import router as chat_router  # type: ignore
 from shipment_qna_bot.logging.middleware_log import RequestLoggingMiddleware
 
 app = FastAPI(title="MCS Shipment Chat Bot")
 
-# Stable session secret for development. Must be set in production via env var.
+# I'm using a stable session secret for development, but I'll make sure to set SHIPMENT_QNA_BOT_SESSION_SECRET in production.
 _SESSION_SECRET = os.getenv(
     "SHIPMENT_QNA_BOT_SESSION_SECRET", "dev_secret_fallback_12345"
 )
@@ -30,10 +25,10 @@ if _SESSION_SECRET == "dev_secret_fallback_12345":
 _APP_INSTANCE_ID = str(uuid.uuid4())
 _APP_STARTED_AT = datetime.now(timezone.utc).isoformat()
 
-# logging middleware (trace_id, timing, basic request logs)
+# I've added this middleware to handle request logging, including trace IDs and timing.
 app.add_middleware(RequestLoggingMiddleware)
 
-# Security Headers Middleware
+# I'm injecting security headers for better safety.
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -60,7 +55,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# CORS Middleware (Restrict as needed)
+# I've restricted CORS simple for now, making sure to tighten it in production.
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
@@ -70,12 +65,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Session middleware for backend-driven persistence
+# I'm using session middleware to handle backend-driven state persistence.
 from starlette.middleware.sessions import SessionMiddleware
 
 app.add_middleware(SessionMiddleware, secret_key=_SESSION_SECRET)
 
-# Mount static files
+# I mount the static files here if the directory exists.
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -99,5 +94,5 @@ async def health_check():
     }
 
 
-# routers as chat_router as rote via user intention hook
+# I include the chat router here to handle all conversation endpoints.
 app.include_router(chat_router)

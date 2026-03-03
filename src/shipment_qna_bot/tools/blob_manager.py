@@ -82,8 +82,7 @@ class BlobAnalyticsManager:
                 "container_number": ["CONT123", "CONT456"],
             }
             # Ensure columns are present
-            from shipment_qna_bot.tools.analytics_metadata import \
-                ANALYTICS_METADATA
+            from shipment_qna_bot.tools.analytics_metadata import ANALYTICS_METADATA
 
             for col in ANALYTICS_METADATA:
                 if col not in data:

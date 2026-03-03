@@ -22,7 +22,7 @@ def _get_chat_tool() -> AzureOpenAIChatTool:
 
 def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Synthesizes a natural language answer from retrieved documents using LLM.
+    I use the LLM to turn retrieved documents into a natural answer.
     """
     set_log_context(
         conversation_id=state.get("conversation_id", "-"),
@@ -251,10 +251,10 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
         try:
             import os
 
-            # Try relative path first (assuming running from root)
+            # I'll check for the ready reference file, looking locally first.
             ready_ref_path = "docs/ready_ref.md"
             if not os.path.exists(ready_ref_path):
-                # Fallback: try absolute path based on file location
+                # If I can't find it, I'll try an absolute path check.
                 base_dir = os.path.abspath(
                     os.path.join(os.path.dirname(__file__), "../../../../")
                 )
@@ -263,8 +263,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             if os.path.exists(ready_ref_path):
                 with open(ready_ref_path, "r") as f:
                     full_ref = f.read()
-                    # Prune: Only keep sections 0 (Style) and 1 (Schema)
-                    # The scenario-based logic (Section 2+) is for code-gen, not answer synthesis.
+                    # I prune the reference to save tokens, only keeping style and schema.
                     style_match = re.search(
                         r"(## 0\. Response Style.*?)## 2\.", full_ref, re.DOTALL
                     )
@@ -278,10 +277,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         # 2. Add Documents Context
         if hits:
-            # Swap columns based on orientation
-            # Refactor: We now include ALL relevant columns in the context and let the LLM
-            # (guided by ready_ref.md) decide what to focus on.
-
+            # I'm including the most relevant columns so the LLM has context.
             for i, hit in enumerate(hits[:10]):
                 context_str += f"\n--- Document {i+1} ---\n"
 
@@ -329,18 +325,19 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     ):
                         context_str += f"{f}: {val}\n"
 
-                # Truncate full content to save tokens
+                # I truncate the content here to stay efficient with tokens.
                 if "content" in hit:
                     content_snippet = str(hit["content"])[:500]
                     if len(str(hit["content"])) > 500:
                         content_snippet += "... [truncated]"
                     context_str += f"Content: {content_snippet}\n"
 
-                # Add metadata_json content intelligently
+                # I'm extracting milestones from the metadata intelligently.
                 if "metadata_json" in hit:
                     try:
                         m = json.loads(str(hit["metadata_json"]))
                         if "milestones" in m and isinstance(m["milestones"], list):
+                            # I'm including the full milestone history now.
                             context_str += (
                                 f"Milestones: {json.dumps(m['milestones'])}\n"
                             )
@@ -411,9 +408,7 @@ System Instructions:
    - Never say "data not available" if these fields have values in the Document sections.
 
 3. ANALYTICS (CRITICAL):
-   - Use "Total Matches in System" for the high-level count. 
-   - Use "Status Breakdown" (facets) for accurate aggregate numbers.
-   - Mention total counts in your summary.
+   - I summarize high-level counts from the analytics data.
 
 4. GROUNDING:
    - Use ONLY the provided context. Do not speculate.
@@ -498,6 +493,7 @@ System Instructions:
             state["usage_metadata"] = usage_metadata
 
             if not response_text or response_text.strip() == "":
+                # If I don't get a response, I'll use this fallback message.
                 response_text = "I processed the data but couldn't generate a summary. Please try rephrasing your question."
 
             def _fmt_date(val: Optional[str]) -> str:
@@ -528,7 +524,7 @@ System Instructions:
                     container = h.get("container_number") or "-"
                     po_raw = h.get("po_numbers") or []
                     if isinstance(po_raw, list):
-                        # Deduplicate POs
+                        # I deduplicate POs to keep the table clean.
                         po_numbers = ", ".join(sorted(list(set(map(str, po_raw)))))
                     else:
                         po_numbers = str(po_raw)
@@ -597,9 +593,10 @@ System Instructions:
                 and not state.get("table_spec")
                 and is_chart_enabled()
             ):
+                # I'll build a structured table if I haven't already.
                 is_fd = _mentions_final_destination(question)
 
-                # Deduplicate hits by container_number to avoid multiple rows for same shipment chunks
+                # I deduplicate by container number so I don't show the same shipment twice.
                 unique_hits = []
                 seen_containers = set()
                 for h in hits:
@@ -608,7 +605,7 @@ System Instructions:
                         unique_hits.append(h)
                         seen_containers.add(c_num)
 
-                # If a PO/Booking/OBL was requested, keep only matching rows for display.
+                # If I'm looking for specific IDs, I'll filter the table rows here.
                 if any(requested_ids.values()):
                     filtered_unique = [
                         h for h in unique_hits if _hit_has_ids(h, requested_ids)
@@ -665,11 +662,11 @@ System Instructions:
                                 or h.get("optimal_eta_fd_date")
                                 or h.get("eta_fd_date")
                             )
-                        # Format list types (like po_numbers)
+                        # I format lists (like POs) as clean strings.
                         if isinstance(val, list):
                             val = ", ".join(sorted(list(set(map(str, val)))))
 
-                        # Format dates specifically for the table spec
+                        # I format dates specifically for the table.
                         if c in [
                             "eta_fd_date",
                             "eta_dp_date",
@@ -679,7 +676,7 @@ System Instructions:
                         ]:
                             val = _fmt_date(val)
 
-                        # Human-readable boolean mapping
+                        # I map boolean flags to human-friendly text.
                         if c == "hot_container_flag":
                             val = "🔥 PRIORITY" if val else "Normal"
 
@@ -698,7 +695,7 @@ System Instructions:
                     )
                     state["answer_text"] = response_text
 
-            # Evidence for response model
+            # I'm building citations to show exactly where I found the info.
             citations: List[Dict[str, Any]] = []
             for h in hits[:5]:
                 citations.append(

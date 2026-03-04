@@ -55,6 +55,14 @@ def _looks_like_association_analytics_query(text: str) -> bool:
     return has_analytics_marker and has_assoc_marker and has_lookup_object
 
 
+def _contains_keyword(text: str, keyword: str) -> bool:
+    lowered = (text or "").strip().lower()
+    term = (keyword or "").strip().lower()
+    if not lowered or not term:
+        return False
+    return bool(re.search(r"\b" + re.escape(term) + r"\b", lowered))
+
+
 def intent_node(state: GraphState) -> GraphState:
     """
     Classifies the user's intent using LLM.
@@ -163,11 +171,11 @@ def intent_node(state: GraphState) -> GraphState:
             }
 
             intent = "retrieval"
-            if any(w in lowered for w in greeting_words):
+            if any(_contains_keyword(lowered, w) for w in greeting_words):
                 intent = "greeting"
-            elif any(w in lowered for w in exit_words):
+            elif any(_contains_keyword(lowered, w) for w in exit_words):
                 intent = "end"
-            elif any(w in lowered for w in analytics_words):
+            elif any(_contains_keyword(lowered, w) for w in analytics_words):
                 intent = "analytics"
 
             sub_intents = [intent]

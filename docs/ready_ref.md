@@ -1,6 +1,6 @@
 # Shipment Q&A Bot - Analytics Reference
 
-This file serves as a **Ready Reference** for the LLM to understand the dataset schema, column definitions, and how to construct Pandas queries for common operational questions.
+This file serves as a **Ready Reference** for the LLM to understand the dataset schema, column definitions, and how to construct DuckDB SQL queries for common operational questions.
 
 ## 0. Response Style And Sorting Policy
 
@@ -124,17 +124,17 @@ This file serves as a **Ready Reference** for the LLM to understand the dataset 
 - Date Column: `best_eta_dp_date` (Format: '%d-%b-%Y')
 - Display Protocol: Show container,po_numbers, best_eta_dp_date, and delay days.
 
-**Pandas Code:**
-```python
-# Filter for delays > 0
-df_filtered = df[df['dp_delayed_dur'] > 0].copy()
-
-# Format Default Date Column
-if 'best_eta_dp_date' in df_filtered.columns:
-    df_filtered['best_eta_dp_date'] = df_filtered['best_eta_dp_date'].dt.strftime('%d-%b-%Y')
-
-# Select Output Columns
-result = df_filtered[['container_number', 'po_numbers', 'best_eta_dp_date', 'dp_delayed_dur', 'shipment_status']]
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
+    dp_delayed_dur,
+    shipment_status
+FROM df
+WHERE dp_delayed_dur > 0
+ORDER BY best_eta_dp_date DESC;
 ```
 
 ### Scenario B: Final Destination (FD) Delays
@@ -144,17 +144,17 @@ result = df_filtered[['container_number', 'po_numbers', 'best_eta_dp_date', 'dp_
 - Date Column: `eta_fd_date` or `best_eta_fd_date`
 - Display Protocol: Show container, FD date, and FD delay days.
 
-**Pandas Code:**
-```python
-# Filter for FD delays > 0
-df_filtered = df[df['fd_delayed_dur'] > 0].copy()
-
-# Format FD Date Column
-if 'best_eta_fd_date' in df_filtered.columns:
-    df_filtered['best_eta_fd_date'] = df_filtered['best_eta_fd_date'].dt.strftime('%d-%b-%Y')
-
-# Select Output Columns
-result = df_filtered[['container_number', 'po_numbers', 'best_eta_fd_date', 'fd_delayed_dur', 'final_destination']]
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    strftime(best_eta_fd_date, '%d-%b-%Y') AS best_eta_fd_date,
+    fd_delayed_dur,
+    final_destination
+FROM df
+WHERE fd_delayed_dur > 0
+ORDER BY best_eta_fd_date DESC;
 ```
 
 ### Scenario C: Hot / Priority Shipments
@@ -163,13 +163,17 @@ result = df_filtered[['container_number', 'po_numbers', 'best_eta_fd_date', 'fd_
 - Filter: `hot_container_flag == True`
 - Columns: `container_number`,`po_numbers`, `hot_container_flag`, `shipment_status`
 
-**Pandas Code:**
-```python
-# Filter for Hot Containers
-df_filtered = df[df['hot_container_flag'] == True].copy()
-
-# Select Output Columns
-result = df_filtered[['container_number','po_numbers', 'hot_container_flag', 'shipment_status', 'best_eta_dp_date']]
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    hot_container_flag,
+    shipment_status,
+    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date
+FROM df
+WHERE hot_container_flag = TRUE
+ORDER BY best_eta_dp_date DESC NULLS LAST;
 ```
 
 ### Scenario D: Delivered Shipments to Consignee (Final Destination)
@@ -180,33 +184,25 @@ result = df_filtered[['container_number','po_numbers', 'hot_container_flag', 'sh
 - Not Delivered: If **both** delivery dates are null, then it is **not** delivered (even if DP reached).
 - Display Protocol: Show container, PO, DP date, delivery/return dates, and status.
 
-**Pandas Code:**
-```python
-# Shipment reached DP (before today) and delivered to consignee
-today = pd.Timestamp.today().normalize()
-
-df_filtered = df[
-    df['best_eta_dp_date'].notna() &
-    (df['best_eta_dp_date'] < today) &
-    (df['delivery_to_consignee_date'].notna() | df['empty_container_return_date'].notna())
-].copy()
-
-# Format key date columns
-for col in ['best_eta_dp_date', 'delivery_to_consignee_date', 'empty_container_return_date']:
-    if col in df_filtered.columns:
-        df_filtered[col] = df_filtered[col].dt.strftime('%d-%b-%Y')
-
-# Select Output Columns
-result = df_filtered[[
-    'container_number',
-    'po_numbers',
-    'discharge_port',
-    'best_eta_dp_date',
-    'final_destination',
-    'delivery_to_consignee_date',
-    'empty_container_return_date',
-    'shipment_status'
-]]
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    discharge_port,
+    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
+    final_destination,
+    strftime(delivery_to_consignee_date, '%d-%b-%Y') AS delivery_to_consignee_date,
+    strftime(empty_container_return_date, '%d-%b-%Y') AS empty_container_return_date,
+    shipment_status
+FROM df
+WHERE best_eta_dp_date IS NOT NULL
+  AND best_eta_dp_date < CURRENT_DATE
+  AND (
+      delivery_to_consignee_date IS NOT NULL
+      OR empty_container_return_date IS NOT NULL
+  )
+ORDER BY best_eta_dp_date DESC;
 ```
 
 ### Scenario E: Next 5-Day Container Schedule (Nashville Example)
@@ -216,23 +212,19 @@ result = df_filtered[[
 - Filter: `discharge_port` contains the city
 - Display Protocol: Show container, PO, arrival date, load port, discharge port.
 
-**Pandas Code:**
-```python
-today = pd.Timestamp.today().normalize()
-next_5_days = today + pd.Timedelta(days=5)
-
-# Filter for shipments with discharge port containing "Nashville" arriving within the next 5 days
-df_filtered = df[
-    df['discharge_port'].str.contains('nashville', na=False, case=False) &
-    (df['best_eta_dp_date'] >= today) &
-    (df['best_eta_dp_date'] <= next_5_days)
-].copy()
-
-# Format the arrival date column
-df_filtered['best_eta_dp_date'] = df_filtered['best_eta_dp_date'].dt.strftime('%d-%b-%Y')
-
-# Select relevant columns
-result = df_filtered[['container_number', 'po_numbers', 'load_port', 'discharge_port', 'best_eta_dp_date']]
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    load_port,
+    discharge_port,
+    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date
+FROM df
+WHERE discharge_port ILIKE '%nashville%'
+  AND best_eta_dp_date >= CURRENT_DATE
+  AND best_eta_dp_date <= CURRENT_DATE + INTERVAL 5 DAY
+ORDER BY best_eta_dp_date ASC;
 ```
 
 ### Scenario F: Shipment Not Yet Arrived At DP (Missed ETA / Overdue)
@@ -245,25 +237,19 @@ result = df_filtered[['container_number', 'po_numbers', 'load_port', 'discharge_
 - Keep only records where DP actual arrival is missing.
 - For failed/missed ETA, keep only overdue expected arrivals.
 
-**Pandas Code:**
-```python
-today = pd.Timestamp.today().normalize()
-
-loc_mask = df['discharge_port'].str.contains(
-    pat='nashville', case=False, na=False, regex=True
-)
-not_arrived_mask = df['ata_dp_date'].isna()
-overdue_mask = df['best_eta_dp_date'].notna() & (df['best_eta_dp_date'] <= today)
-
-mask = loc_mask & not_arrived_mask & overdue_mask
-df_filtered = df[mask].copy()
-
-# Sort latest expected arrivals first (current date first)
-df_filtered = df_filtered.sort_values('best_eta_dp_date', ascending=False)
-
-df_filtered['best_eta_dp_date'] = df_filtered['best_eta_dp_date'].dt.strftime('%d-%b-%Y')
-
-result = df_filtered[
-    ['container_number', 'po_numbers', 'load_port', 'discharge_port', 'best_eta_dp_date', 'shipment_status']
-]
+**DuckDB SQL:**
+```sql
+SELECT
+    container_number,
+    po_numbers,
+    load_port,
+    discharge_port,
+    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
+    shipment_status
+FROM df
+WHERE discharge_port ILIKE '%nashville%'
+  AND ata_dp_date IS NULL
+  AND best_eta_dp_date IS NOT NULL
+  AND best_eta_dp_date <= CURRENT_DATE
+ORDER BY best_eta_dp_date DESC;
 ```

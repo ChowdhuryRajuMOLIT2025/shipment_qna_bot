@@ -435,6 +435,32 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
             if not _is_control_reply(question):
                 state["pending_topic_shift"] = None
 
+        pending_analytics = state.get("pending_analytics_scope")
+        if pending_analytics:
+            choice = _parse_analytics_scope_choice(question)
+            if choice:
+                chosen_raw = (pending_analytics.get("question_raw") or question).strip()
+                chosen_normalized = (
+                    pending_analytics.get("normalized_question") or chosen_raw.lower()
+                ).strip()
+                state["question_raw"] = chosen_raw
+                state["normalized_question"] = chosen_normalized
+                state["pending_analytics_scope"] = None
+                state["analytics_scope_candidate"] = None
+                state["analytics_context_mode"] = choice
+                state.setdefault("messages", []).append(
+                    HumanMessage(content=chosen_raw)
+                )
+                logger.info(
+                    "Applied analytics scope choice: %s",
+                    choice,
+                    extra={"extra_data": {"chosen": chosen_raw[:120]}},
+                )
+                return state
+
+            if not _is_control_reply(question):
+                state["pending_analytics_scope"] = None
+
         # Praise/Feedback Guardrail (Issue A)
         praise_patterns = [
             r"^(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)[\s\d!.]*$",

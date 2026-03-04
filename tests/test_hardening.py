@@ -1,12 +1,9 @@
-import pandas as pd
-
 from shipment_qna_bot.graph.nodes.clarification import clarification_node
 from shipment_qna_bot.graph.nodes.intent import intent_node
 from shipment_qna_bot.graph.nodes.judge import judge_node
 from shipment_qna_bot.graph.nodes.normalizer import normalize_node
 from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
     should_handle_overview
-from shipment_qna_bot.tools.pandas_engine import PandasAnalyticsEngine
 
 
 def _write_overview(tmp_path):
@@ -96,6 +93,24 @@ def test_normalizer_uses_previous_result_scope_hint():
     assert new_state.get("analytics_scope_candidate") is None
 
 
+def test_normalizer_applies_pending_analytics_scope_choice():
+    state = {
+        "question_raw": "1",
+        "messages": [],
+        "pending_analytics_scope": {
+            "question_raw": "which are hot?",
+            "normalized_question": "which are hot?",
+        },
+    }
+
+    new_state = normalize_node(state)
+
+    assert new_state.get("question_raw") == "which are hot?"
+    assert new_state.get("normalized_question") == "which are hot?"
+    assert new_state.get("analytics_context_mode") == "previous_result"
+    assert new_state.get("pending_analytics_scope") is None
+
+
 def test_intent_forces_analytics_for_association_queries():
     state = {
         "question_raw": "analyse to show container associated with ABC123",
@@ -114,6 +129,17 @@ def test_intent_forces_analytics_for_association_queries():
     assert "association_lookup" in (new_state.get("sub_intents") or [])
 
 
+def test_intent_test_mode_does_not_treat_shipments_as_greeting():
+    state = {
+        "question_raw": "show me a breakdown of shipments by discharge port",
+        "normalized_question": "show me a breakdown of shipments by discharge port",
+    }
+
+    new_state = intent_node(state)
+
+    assert new_state["intent"] == "analytics"
+
+
 def test_judge_retries_analytics_failure_without_hits():
     state = {
         "question_raw": "How many delayed shipments?",
@@ -129,29 +155,3 @@ def test_judge_retries_analytics_failure_without_hits():
     assert new_state["is_satisfied"] is False
     assert new_state["retry_count"] == 1
     assert "retry" in (new_state.get("reflection_feedback") or "").lower()
-
-
-def test_pandas_preflight_rejects_disallowed_import():
-    df = pd.DataFrame({"x": [1, 2, 3]})
-    engine = PandasAnalyticsEngine()
-
-    result = engine.execute_code(
-        df, "import matplotlib.pyplot as plt\nresult = df['x'].sum()"
-    )
-
-    assert result["success"] is False
-    assert "not allowed" in (result.get("error") or "").lower()
-
-
-def test_pandas_engine_coerces_string_ops():
-    df = pd.DataFrame({"po_numbers": [5303012825, 5303012826]})
-    engine = PandasAnalyticsEngine()
-
-    code = (
-        "df_filtered = df[df['po_numbers'].str.contains('530301', na=False)]\n"
-        "result = df_filtered[['po_numbers']]"
-    )
-    result = engine.execute_code(df, code)
-
-    assert result["success"] is True
-    assert "5303012825" in (result.get("final_answer") or "")

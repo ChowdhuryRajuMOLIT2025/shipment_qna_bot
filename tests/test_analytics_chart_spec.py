@@ -1,37 +1,30 @@
 import pandas as pd
 
 from shipment_qna_bot.graph.nodes import analytics_planner as analytics_module
+from shipment_qna_bot.tools.duckdb_engine import DuckDBAnalyticsEngine
 
 
 class _StubBlobManager:
-    def __init__(self, df: pd.DataFrame):
-        self._df = df
+    def __init__(self, parquet_path: str):
+        self._parquet_path = parquet_path
 
-    def load_filtered_data(self, consignee_codes):
-        return self._df.copy()
+    def get_local_path(self):
+        return self._parquet_path
 
 
 class _StubChatTool:
-    def __init__(self, code: str):
-        self._code = code
+    def __init__(self, sql: str):
+        self._sql = sql
 
     def chat_completion(self, messages, temperature=0.0):
         return {
-            "content": f"```python\n{self._code}\n```",
+            "content": f"```sql\n{self._sql}\n```",
             "usage": {
                 "prompt_tokens": 1,
                 "completion_tokens": 1,
                 "total_tokens": 2,
             },
         }
-
-
-class _StubEngine:
-    def __init__(self, exec_result):
-        self._exec_result = exec_result
-
-    def execute_code(self, df, code):
-        return dict(self._exec_result)
 
 
 def _base_state(question: str):
@@ -48,56 +41,44 @@ def _base_state(question: str):
             "completion_tokens": 0,
             "total_tokens": 0,
         },
+        "today_date": "2026-03-04",
     }
 
 
-def _exec_result():
-    return {
-        "success": True,
-        "output": "",
-        "result": "| discharge_port | count |\n|---|---|\n| LOS ANGELES | 12 |",
-        "final_answer": "| discharge_port | count |\n|---|---|\n| LOS ANGELES | 12 |",
-        "result_type": "DataFrame",
-        "filtered_rows": None,
-        "filtered_preview": "",
-        "result_columns": ["discharge_port", "count"],
-        "result_rows": [
-            {"discharge_port": "LOS ANGELES", "count": 12},
-            {"discharge_port": "NEW YORK", "count": 7},
-            {"discharge_port": "HOUSTON", "count": 4},
-        ],
-    }
-
-
-def _exec_result_dict():
-    return {
-        "success": True,
-        "output": "",
-        "result": "{'November 2025': 139, 'December 2025': 160}",
-        "final_answer": "{'November 2025': 139, 'December 2025': 160}",
-        "result_type": "dict",
-        "filtered_rows": None,
-        "filtered_preview": "",
-        "result_columns": None,
-        "result_rows": None,
-        "result_value": {"November 2025": 139, "December 2025": 160},
-    }
-
-
-def test_analytics_generates_bar_chart_spec(monkeypatch):
+def _write_parquet(tmp_path):
+    path = tmp_path / "analytics.parquet"
     df = pd.DataFrame(
-        {"discharge_port": ["LOS ANGELES"], "shipment_status": ["IN_OCEAN"]}
+        {
+            "container_number": ["CONT1", "CONT2", "CONT3"],
+            "consignee_codes": [["0000866"], ["0000866"], ["0000866"]],
+            "discharge_port": ["LOS ANGELES", "NEW YORK", "LOS ANGELES"],
+            "shipment_status": ["IN_OCEAN", "DELIVERED", "IN_OCEAN"],
+            "po_numbers": [["PO1"], ["PO2"], ["PO3"]],
+            "booking_numbers": [["BK1"], ["BK2"], ["BK3"]],
+            "obl_nos": [["OBL1"], ["OBL2"], ["OBL3"]],
+        }
     )
+    df.to_parquet(path)
+    return str(path)
+
+
+def test_analytics_generates_bar_chart_spec(monkeypatch, tmp_path):
+    parquet_path = _write_parquet(tmp_path)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
-        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(parquet_path)
     )
     monkeypatch.setattr(
-        analytics_module, "_get_chat", lambda: _StubChatTool("result = df")
+        analytics_module,
+        "_get_chat",
+        lambda: _StubChatTool(
+            "SELECT discharge_port, count(*) AS count "
+            "FROM df GROUP BY discharge_port ORDER BY count DESC"
+        ),
     )
     monkeypatch.setattr(
-        analytics_module, "_get_pandas_engine", lambda: _StubEngine(_exec_result())
+        analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -106,7 +87,8 @@ def test_analytics_generates_bar_chart_spec(monkeypatch):
 
     assert new_state["table_spec"] is not None
     assert new_state["table_spec"]["columns"] == ["discharge_port", "count"]
-    assert len(new_state["table_spec"]["rows"]) == 3
+    assert new_state["table_spec"]["rows"][0]["discharge_port"] == "LOS ANGELES"
+    assert new_state["table_spec"]["rows"][0]["count"] == 2
 
     assert new_state["chart_spec"] is not None
     assert new_state["chart_spec"]["kind"] == "bar"
@@ -114,20 +96,23 @@ def test_analytics_generates_bar_chart_spec(monkeypatch):
     assert new_state["chart_spec"]["encodings"]["y"] == "count"
 
 
-def test_analytics_generates_pie_chart_spec(monkeypatch):
-    df = pd.DataFrame(
-        {"discharge_port": ["LOS ANGELES"], "shipment_status": ["IN_OCEAN"]}
-    )
+def test_analytics_generates_pie_chart_spec(monkeypatch, tmp_path):
+    parquet_path = _write_parquet(tmp_path)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
-        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(parquet_path)
     )
     monkeypatch.setattr(
-        analytics_module, "_get_chat", lambda: _StubChatTool("result = df")
+        analytics_module,
+        "_get_chat",
+        lambda: _StubChatTool(
+            "SELECT discharge_port, count(*) AS count "
+            "FROM df GROUP BY discharge_port ORDER BY count DESC"
+        ),
     )
     monkeypatch.setattr(
-        analytics_module, "_get_pandas_engine", lambda: _StubEngine(_exec_result())
+        analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -140,20 +125,23 @@ def test_analytics_generates_pie_chart_spec(monkeypatch):
     assert new_state["chart_spec"]["encodings"]["value"] == "count"
 
 
-def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch):
-    df = pd.DataFrame(
-        {"discharge_port": ["LOS ANGELES"], "shipment_status": ["IN_OCEAN"]}
-    )
+def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch, tmp_path):
+    parquet_path = _write_parquet(tmp_path)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
-        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(parquet_path)
     )
     monkeypatch.setattr(
-        analytics_module, "_get_chat", lambda: _StubChatTool("result = df")
+        analytics_module,
+        "_get_chat",
+        lambda: _StubChatTool(
+            "SELECT discharge_port, count(*) AS count "
+            "FROM df GROUP BY discharge_port ORDER BY count DESC"
+        ),
     )
     monkeypatch.setattr(
-        analytics_module, "_get_pandas_engine", lambda: _StubEngine(_exec_result())
+        analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -164,35 +152,44 @@ def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch):
     assert new_state.get("chart_spec") is None
 
 
-def test_analytics_dict_result_generates_pie_chart(monkeypatch):
-    df = pd.DataFrame(
-        {"discharge_port": ["LOS ANGELES"], "shipment_status": ["IN_OCEAN"]}
-    )
+def test_analytics_previous_result_scope_filters_view(monkeypatch, tmp_path):
+    parquet_path = _write_parquet(tmp_path)
 
     monkeypatch.setattr(analytics_module, "is_test_mode", lambda: False)
     monkeypatch.setattr(
-        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(df)
+        analytics_module, "_get_blob_manager", lambda: _StubBlobManager(parquet_path)
     )
     monkeypatch.setattr(
         analytics_module,
         "_get_chat",
-        lambda: _StubChatTool("result = {'November 2025': 139, 'December 2025': 160}"),
+        lambda: _StubChatTool(
+            "SELECT container_number, shipment_status FROM df ORDER BY container_number"
+        ),
     )
     monkeypatch.setattr(
-        analytics_module, "_get_pandas_engine", lambda: _StubEngine(_exec_result_dict())
+        analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
-    new_state = analytics_module.analytics_planner_node(
-        _base_state(
-            "show pie chart for containers received november 2025 vs december 2025"
-        )
-    )
+    state = _base_state("which shipments from above list are delivered?")
+    state["analytics_context_mode"] = "previous_result"
+    state["last_analytics_result_selector"] = {
+        "kind": "id_sets",
+        "ids": {"container_number": ["CONT2", "CONT3"]},
+        "row_count": 2,
+    }
+
+    new_state = analytics_module.analytics_planner_node(state)
 
     assert new_state["table_spec"] is not None
-    assert new_state["table_spec"]["columns"] == ["label", "value"]
-    assert len(new_state["table_spec"]["rows"]) == 2
-
-    assert new_state["chart_spec"] is not None
-    assert new_state["chart_spec"]["kind"] == "pie"
-    assert new_state["chart_spec"]["encodings"]["label"] == "label"
-    assert new_state["chart_spec"]["encodings"]["value"] == "value"
+    assert [row["container_number"] for row in new_state["table_spec"]["rows"]] == [
+        "CONT2",
+        "CONT3",
+    ]
+    assert "Applied previous analytics result scope (2 rows)." in (
+        new_state.get("notices") or []
+    )
+    assert new_state["last_analytics_result_selector"]["ids"]["container_number"] == [
+        "CONT2",
+        "CONT3",
+    ]
+    assert new_state["last_analytics_result_count"] == 2

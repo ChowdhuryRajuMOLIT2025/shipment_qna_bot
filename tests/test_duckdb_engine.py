@@ -68,3 +68,20 @@ def test_execute_query_sql_complex(sample_parquet):
     assert len(result["result_rows"]) == 2
     assert result["result_rows"][0]["shipment_status"] == "DELIVERED"
     assert result["result_rows"][0]["total_weight"] == 400  # 100 + 300
+
+
+def test_execute_query_previous_result_selector(sample_parquet):
+    engine = DuckDBAnalyticsEngine()
+    selector = {
+        "kind": "id_sets",
+        "ids": {"container_number": ["CONT2", "CONT3"]},
+        "row_count": 2,
+    }
+    sql = "SELECT count(*) as total FROM df"
+    result = engine.execute_query(
+        sample_parquet, sql, ["A", "B", "C"], selector=selector
+    )
+
+    assert result["success"] is True
+    assert result["filtered_rows"] == 2
+    assert result["result_rows"][0]["total"] == 2

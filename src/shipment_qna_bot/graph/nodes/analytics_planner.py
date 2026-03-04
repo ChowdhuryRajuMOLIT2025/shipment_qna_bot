@@ -2,7 +2,7 @@ import json  # type: ignore
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
 
-import pandas as pd
+from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
@@ -323,13 +323,83 @@ def _build_chart_spec_from_table(
     }
 
 
+def _normalize_identifier_values(raw_value: Any) -> List[str]:
+    if raw_value is None:
+        return []
+
+    if isinstance(raw_value, list):
+        values = raw_value
+    else:
+        values = [raw_value]
+
+    normalized: List[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and "," in value:
+            parts = [part.strip() for part in value.split(",")]
+        else:
+            parts = [str(value).strip()]
+        for part in parts:
+            cleaned = part.strip().upper()
+            if cleaned:
+                normalized.append(cleaned)
+    return list(dict.fromkeys(normalized))
+
+
+def _selector_has_ids(selector: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(selector, dict):
+        return False
+    raw_ids = selector.get("ids")
+    if not isinstance(raw_ids, dict):
+        return False
+    for field in ("container_number", "po_numbers", "booking_numbers", "obl_nos"):
+        if _normalize_identifier_values(raw_ids.get(field)):
+            return True
+    return False
+
+
+def _build_result_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    result_rows = exec_result.get("result_rows")
+    if not isinstance(result_rows, list) or not result_rows:
+        return None
+
+    ids: Dict[str, List[str]] = {
+        "container_number": [],
+        "po_numbers": [],
+        "booking_numbers": [],
+        "obl_nos": [],
+    }
+
+    for row in result_rows:
+        if not isinstance(row, dict):
+            continue
+        for field in ids.keys():
+            values = _normalize_identifier_values(row.get(field))
+            if values:
+                ids[field].extend(values)
+
+    normalized_ids = {
+        field: list(dict.fromkeys(values)) for field, values in ids.items() if values
+    }
+
+    if not normalized_ids:
+        return None
+
+    return {
+        "kind": "id_sets",
+        "ids": normalized_ids,
+        "row_count": len([row for row in result_rows if isinstance(row, dict)]),
+    }
+
+
 def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Pandas Analyst Agent Node.
-    1. Downloads/Loads the full dataset (Master Cache).
-    2. Filters for the current user (Consignee Scope).
-    3. Generates Pandas code using LLM.
-    4. Executes code to answer the question.
+    DuckDB analytics node.
+    1. Resolves the analytics parquet path.
+    2. Creates a scoped DuckDB view for the authorized user.
+    3. Generates SQL with the LLM.
+    4. Executes the SQL and returns structured table/chart artifacts.
     """
     set_log_context(
         conversation_id=state.get("conversation_id", "-"),
@@ -354,6 +424,7 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "No consignee codes provided. Please select at least one code to view data."
             )
             state["is_satisfied"] = True
+            state["messages"] = [AIMessage(content=state["answer_text"])]
             return state
 
         # 1. Load Data/Path
@@ -361,31 +432,17 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
             blob_mgr = _get_blob_manager()
             parquet_path = blob_mgr.get_local_path()
 
-            # Use DuckDB to get schema and head sample without loading full DF
             engine = _get_duckdb_engine()
-            sample_rel = engine.con.sql(
-                f"SELECT * FROM read_parquet('{parquet_path}') LIMIT 5"
-            )
-            df_head = sample_rel.df()
-            columns = df_head.columns.tolist()
-
-            if df_head.empty:
-                state["answer_text"] = (
-                    "I found no data available in the master dataset."
-                )
-                state["is_satisfied"] = True
-                return state
+            selector: Optional[Dict[str, Any]] = None
+            scope_label = "authorized session scope"
 
             if analytics_context_mode == "previous_result":
-                scoped_df = _apply_followup_selector(
-                    df,
-                    (
-                        state.get("last_analytics_result_selector")
-                        if isinstance(state.get("last_analytics_result_selector"), dict)
-                        else None
-                    ),
+                selector_candidate = (
+                    state.get("last_analytics_result_selector")
+                    if isinstance(state.get("last_analytics_result_selector"), dict)
+                    else None
                 )
-                if scoped_df is None:
+                if not _selector_has_ids(selector_candidate):
                     state["answer_text"] = (
                         "I couldn't reuse the previous analytics result list for this follow-up. "
                         "Please rerun the previous list query or choose the full session scope."
@@ -394,21 +451,53 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     state.setdefault("notices", []).append(
                         "Previous analytics result subset could not be reconstructed."
                     )
+                    state["messages"] = [AIMessage(content=state["answer_text"])]
                     return state
-                if scoped_df.empty:
+
+                selector = selector_candidate
+                selector_count = selector.get("row_count")
+                scope_label = "previous analytics result scope"
+                if isinstance(selector_count, int) and selector_count >= 0:
+                    scope_label = (
+                        f"previous analytics result scope ({selector_count} rows)"
+                    )
+
+            engine.prepare_view(parquet_path, consignee_codes, selector=selector)
+
+            scope_row_count = engine.con.sql("SELECT count(*) AS row_count FROM df").fetchone()[0]  # type: ignore
+            if int(scope_row_count or 0) <= 0:
+                if analytics_context_mode == "previous_result":
                     state["answer_text"] = (
                         "The previous analytics result list no longer matches any rows in the current session data. "
                         "Please rerun the previous query."
                     )
-                    state["is_satisfied"] = True
                     state.setdefault("notices", []).append(
                         "Previous analytics result subset resolved to 0 rows."
                     )
-                    return state
-                df = scoped_df
+                else:
+                    state["answer_text"] = (
+                        "I found no data available in the current authorized analytics scope."
+                    )
+                state["is_satisfied"] = True
+                state["messages"] = [AIMessage(content=state["answer_text"])]
+                return state
+
+            if analytics_context_mode == "previous_result":
                 state.setdefault("notices", []).append(
-                    f"Applied previous analytics result scope ({len(df)} rows)."
+                    f"Applied previous analytics result scope ({int(scope_row_count)} rows)."
                 )
+
+            sample_rel = engine.con.sql("SELECT * FROM df LIMIT 5")
+            df_head = sample_rel.df()
+            columns = df_head.columns.tolist()
+
+            if df_head.empty:
+                state["answer_text"] = (
+                    "I found no data available in the master dataset."
+                )
+                state["is_satisfied"] = True
+                state["messages"] = [AIMessage(content=state["answer_text"])]
+                return state
 
         except Exception as e:
             logger.error(f"Analytics Data Path Resolution Failed: {e}")
@@ -418,11 +507,12 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "Please try again in a moment."
             )
             state["is_satisfied"] = True
+            state["messages"] = [AIMessage(content=state["answer_text"])]
             return state
 
         # 2. Prepare Context
         head_sample = df_head.to_markdown(index=False)
-        shape_info = f"Columns: {len(columns)}"
+        shape_info = f"Rows in scope: {int(scope_row_count)}; Columns: {len(columns)}"
 
         # Load Ready Reference if available
         ready_ref_content = ""
@@ -557,7 +647,12 @@ ORDER BY best_eta_dp_date DESC;
             return state
 
         exec_attempts = 1
-        exec_result = engine.execute_query(parquet_path, generated_sql, consignee_codes)
+        exec_result = engine.execute_query(
+            parquet_path,
+            generated_sql,
+            consignee_codes,
+            selector=selector,
+        )
 
         if not exec_result.get("success"):
             error_msg = str(exec_result.get("error") or "")
@@ -578,30 +673,48 @@ ORDER BY best_eta_dp_date DESC;
                     generated_sql = repaired_sql
                     exec_attempts += 1
                     exec_result = engine.execute_query(
-                        parquet_path, generated_sql, consignee_codes
+                        parquet_path,
+                        generated_sql,
+                        consignee_codes,
+                        selector=selector,
                     )
             except Exception as repair_exc:
                 logger.warning("Analytics SQL repair pass failed: %s", repair_exc)
 
         if exec_result["success"]:
-            state["answer_text"] = (
-                f"Here is what I found:\n{exec_result.get('result', '')}"
-            )
+            final_answer = str(
+                exec_result.get("result") or exec_result.get("final_answer") or ""
+            ).strip()
+            if final_answer:
+                state["answer_text"] = f"Here is what I found:\n{final_answer}"
+            else:
+                state["answer_text"] = "I ran the analytics query successfully."
             state["is_satisfied"] = True
             state["analytics_last_error"] = None
             state["analytics_attempt_count"] = exec_attempts
 
             table_spec = _build_table_spec_from_exec(exec_result)
-            if table_spec:
-                state["table_spec"] = table_spec
+            state["table_spec"] = table_spec
 
             chart_spec = _build_chart_spec_from_table(q, table_spec)
-            if chart_spec:
-                state["chart_spec"] = chart_spec
+            state["chart_spec"] = chart_spec
+
+            selector_metadata = _build_result_selector(exec_result)
+            state["last_analytics_result_selector"] = selector_metadata
+            state["last_analytics_result_count"] = (
+                selector_metadata.get("row_count")
+                if isinstance(selector_metadata, dict)
+                else None
+            )
+            state["last_analytics_question"] = q
+            state["messages"] = [AIMessage(content=state["answer_text"])]
         else:
             state["answer_text"] = "I couldn't run that analytics query successfully."
             state["is_satisfied"] = False
             state["analytics_last_error"] = str(exec_result.get("error") or "")
             state["analytics_attempt_count"] = exec_attempts
+            state["table_spec"] = None
+            state["chart_spec"] = None
+            state["messages"] = [AIMessage(content=state["answer_text"])]
 
     return state

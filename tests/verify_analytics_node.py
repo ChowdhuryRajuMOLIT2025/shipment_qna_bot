@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 # Add src to path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root / "src"))
@@ -15,7 +17,7 @@ from shipment_qna_bot.graph.nodes.analytics_planner import \
     analytics_planner_node
 
 
-def test_real_analytics_node():
+def _run_real_analytics_node() -> bool:
     print("Testing Real Analytics Node (End-to-End)...")
 
     # Setup state
@@ -43,7 +45,7 @@ def test_real_analytics_node():
         print(ans)
         print("---------------------\n")
 
-        if ans and "Analysis Result" in ans:
+        if ans and "Here is what I found:" in ans:
             print("SUCCESS: Node returned a valid analysis answer.")
             return True
         else:
@@ -58,8 +60,14 @@ def test_real_analytics_node():
         return False
 
 
+def test_real_analytics_node():
+    if os.getenv("SHIPMENT_QNA_BOT_RUN_INTEGRATION") != "1":
+        pytest.skip("Integration-only verification.")
+    assert _run_real_analytics_node() is True
+
+
 if __name__ == "__main__":
-    if test_real_analytics_node():
+    if _run_real_analytics_node():
         print("Final E2E Verification Passed")
         sys.exit(0)
     else:

@@ -11,12 +11,33 @@ from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
 
+_WEATHER_TERMS = {
+    "weather",
+    "storm",
+    "temperature",
+    "rain",
+    "forecast",
+    "climate",
+    "wind",
+    "gust",
+    "typhoon",
+    "hurricane",
+    "cyclone",
+    "fog",
+    "thunder",
+}
+
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
     global _chat_tool
     if _chat_tool is None:
         _chat_tool = AzureOpenAIChatTool()
     return _chat_tool
+
+
+def _contains_weather_terms(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(term in lowered for term in _WEATHER_TERMS)
 
 
 def intent_node(state: GraphState) -> GraphState:
@@ -71,14 +92,6 @@ def intent_node(state: GraphState) -> GraphState:
             lowered = text.lower()
             greeting_words = {"hi", "hello", "hey", "good morning", "good afternoon"}
             analytics_words = {"chart", "graph", "analytics", "breakdown", "bucket"}
-            weather_words = {
-                "weather",
-                "storm",
-                "temperature",
-                "rain",
-                "forecast",
-                "climate",
-            }
             exit_words = {
                 "bye",
                 "goodbye",
@@ -95,7 +108,7 @@ def intent_node(state: GraphState) -> GraphState:
                 intent = "end"
             elif is_chart_enabled() and any(w in lowered for w in analytics_words):
                 intent = "analytics"
-            elif is_weather_enabled() and any(w in lowered for w in weather_words):
+            elif is_weather_enabled() and _contains_weather_terms(lowered):
                 intent = "retrieval"  # Weather is usually an enrichment for retrieval
 
             sub_intents = [intent]
@@ -105,8 +118,18 @@ def intent_node(state: GraphState) -> GraphState:
                 sub_intents.append("delay")
             if "status" in lowered:
                 sub_intents.append("status")
-            if is_weather_enabled() and any(w in lowered for w in weather_words):
+            if is_weather_enabled() and _contains_weather_terms(lowered):
                 sub_intents.append("weather")
+
+            if (
+                is_weather_enabled()
+                and _contains_weather_terms(lowered)
+                and intent
+                not in {"greeting", "end", "company_overview", "clarification"}
+            ):
+                intent = "retrieval"
+                if "retrieval" not in sub_intents:
+                    sub_intents.insert(0, "retrieval")
 
             # Deduplicate while preserving order
             seen = set()
@@ -218,6 +241,17 @@ def intent_node(state: GraphState) -> GraphState:
             ]
             if intent not in valid_intents:
                 intent = "retrieval"
+
+            if is_weather_enabled() and _contains_weather_terms(raw_text or text):
+                if "weather" not in sub_intents:
+                    sub_intents = list(sub_intents) + ["weather"]
+                if intent not in {
+                    "greeting",
+                    "company_overview",
+                    "clarification",
+                    "end",
+                }:
+                    intent = "retrieval"
 
         except Exception as e:
             logger.error(f"Intent classification failed: {e}")

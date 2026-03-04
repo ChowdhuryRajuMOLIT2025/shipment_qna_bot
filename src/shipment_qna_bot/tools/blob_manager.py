@@ -149,7 +149,11 @@ class BlobAnalyticsManager:
             logger.info("Cache miss or date rollover. Reading fresh...")
             file_path = self.download_master_data()
 
-            requested_cols = list(ANALYTICS_METADATA.keys()) + ["consignee_codes"]
+            requested_cols = list(ANALYTICS_METADATA.keys()) + [
+                "consignee_codes",
+                "document_id",
+                "carr_eqp_uid",
+            ]
 
             try:
 

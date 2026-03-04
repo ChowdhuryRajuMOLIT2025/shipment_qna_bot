@@ -158,7 +158,7 @@ def _fetch_weather_alerts(hits: list[Dict[str, Any]], state: Dict[str, Any]) -> 
         return
 
     locations = set()
-    for h in hits[:5]:  # Check top 5 hits for locations
+    for h in hits[:10]:
         for field in ["discharge_port", "final_destination", "load_port"]:
             loc = h.get(field)
             if loc and isinstance(loc, str) and len(loc) > 2:
@@ -168,15 +168,28 @@ def _fetch_weather_alerts(hits: list[Dict[str, Any]], state: Dict[str, Any]) -> 
         return
 
     weather_tool = _get_weather_tool()
-    for loc in sorted(list(locations))[:3]:  # Limit to 3 unique locations per query
-        res = weather_tool.get_weather_for_location(loc)
+    success_count = 0
+    failure_count = 0
+    for loc in sorted(list(locations))[:6]:
+        res = weather_tool.get_impact_for_location(loc, forecast_days=3)
+        for notice in weather_tool.consume_transport_notices():
+            if notice not in state.setdefault("notices", []):
+                state["notices"].append(notice)
         if res:
-            condition = res.get("condition", "Unknown")
-            temp = res.get("temp")
-            wind = res.get("windspeed")
-            msg = f"Weather Update for {res['location']} ({res.get('country','')}): {condition}, {temp}°C, Wind: {wind}km/h."
+            msg = (
+                f"Weather Outlook for {res['location']} ({res.get('country', '')}): "
+                f"{res.get('summary', 'No summary available.')}"
+            )
             state.setdefault("notices", []).append(msg)
             logger.info(f"Added weather notice for {loc}")
+            success_count += 1
+        else:
+            failure_count += 1
+
+    if failure_count and not success_count:
+        state.setdefault("notices", []).append(
+            "Live weather enrichment could not retrieve data for the matched shipment locations."
+        )
 
 
 def _get_news_tool() -> NewsTool:

@@ -435,34 +435,18 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
             if not _is_control_reply(question):
                 state["pending_topic_shift"] = None
 
-        pending_analytics_scope = state.get("pending_analytics_scope")
-        if pending_analytics_scope:
-            scope_choice = _parse_analytics_scope_choice(question)
-            if scope_choice:
-                chosen_raw = (
-                    pending_analytics_scope.get("question_raw") or question
-                ).strip()
-                chosen_normalized = (
-                    pending_analytics_scope.get("normalized_question")
-                    or chosen_raw.lower()
-                ).strip()
-                state["question_raw"] = chosen_raw
-                state["normalized_question"] = chosen_normalized
-                state["analytics_context_mode"] = scope_choice
-                state["pending_analytics_scope"] = None
-                state["analytics_scope_candidate"] = None
-                state.setdefault("messages", []).append(
-                    HumanMessage(content=chosen_raw)
-                )
-                logger.info(
-                    "Applied analytics scope choice: %s",
-                    scope_choice,
-                    extra={"extra_data": {"chosen": chosen_raw[:120]}},
-                )
-                return state
-
-            if not _is_control_reply(question):
-                state["pending_analytics_scope"] = None
+        # Praise/Feedback Guardrail (Issue A)
+        praise_patterns = [
+            r"^(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)[\s\d!.]*$",
+            r"^(no|nothing|that's it|all set|i'm good|no thanks)[\s.]*$",
+        ]
+        if any(re.search(p, question.lower()) for p in praise_patterns):
+            logger.info(
+                "Normalizer: Bypassing LLM rewrite for praise/acknowledgment message."
+            )
+            state["normalized_question"] = question.lower()
+            state["topic_shift_candidate"] = None
+            return state
 
         if is_test_mode() or forced_new_topic:
             normalized_q = question.lower()

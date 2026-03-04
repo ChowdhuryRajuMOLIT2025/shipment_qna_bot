@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shipment Q&A Bot</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <style>
         :root {
             --bg-color: #1a1a1a;
@@ -308,6 +310,35 @@
             background: rgba(255, 255, 255, 0.02);
         }
 
+        .chart-wrapper {
+            margin-top: 12px;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+
+        .chart-title {
+            font-size: 0.82rem;
+            color: #cfcfcf;
+            margin: 0 0 8px 0;
+            font-weight: 600;
+        }
+
+        .chart-canvas {
+            width: 100%;
+            height: 250px;
+        }
+
+        .chart-empty {
+            color: #aaa;
+            font-size: 0.78rem;
+            margin-top: 6px;
+        }
+
         .pagination {
             display: flex;
             justify-content: center;
@@ -382,6 +413,10 @@
             .loader-video {
                 width: 62px;
                 height: 36px;
+            }
+
+            .chart-canvas {
+                height: 220px;
             }
         }
     </style>
@@ -647,18 +682,173 @@
             });
         }
 
-        function addMessage(text, role, metadata = null, table = null, intent = null) {
+        function ensureChartPluginsRegistered() {
+            if (typeof Chart === 'undefined') return;
+            if (window.__chartPluginsRegistered) return;
+            if (typeof ChartDataLabels !== 'undefined') {
+                Chart.register(ChartDataLabels);
+            }
+            window.__chartPluginsRegistered = true;
+        }
+
+        function renderChart(chartSpec) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chart-wrapper';
+
+            const title = document.createElement('p');
+            title.className = 'chart-title';
+            title.textContent = chartSpec && chartSpec.title ? chartSpec.title : 'Analytics Chart';
+            wrapper.appendChild(title);
+
+            if (typeof Chart === 'undefined') {
+                const err = document.createElement('div');
+                err.className = 'chart-empty';
+                err.textContent = 'Chart library unavailable; showing table fallback.';
+                wrapper.appendChild(err);
+                return wrapper;
+            }
+
+            const dataRows = Array.isArray(chartSpec?.data) ? chartSpec.data : [];
+            if (dataRows.length === 0) {
+                const err = document.createElement('div');
+                err.className = 'chart-empty';
+                err.textContent = 'No chart data available.';
+                wrapper.appendChild(err);
+                return wrapper;
+            }
+
+            const kindRaw = String(chartSpec?.kind || 'bar').toLowerCase();
+            const kind = ['bar', 'line', 'pie'].includes(kindRaw) ? kindRaw : 'bar';
+            const enc = chartSpec?.encodings || {};
+            const sample = dataRows.find(row => row && typeof row === 'object') || {};
+            const keys = Object.keys(sample);
+
+            const xKey = enc.x || keys[0];
+            const yKey = enc.y || keys[1];
+            const labelKey = enc.label || xKey;
+            const valueKey = enc.value || yKey;
+
+            if (!xKey || !yKey) {
+                const err = document.createElement('div');
+                err.className = 'chart-empty';
+                err.textContent = 'Insufficient chart encoding data.';
+                wrapper.appendChild(err);
+                return wrapper;
+            }
+
+            const limit = kind === 'pie' ? 24 : 80;
+            const labels = [];
+            const values = [];
+
+            dataRows.slice(0, limit).forEach((row, idx) => {
+                if (!row || typeof row !== 'object') {
+                    return;
+                }
+                const rawLabel = kind === 'pie' ? row[labelKey] : row[xKey];
+                const rawValue = kind === 'pie' ? row[valueKey] : row[yKey];
+                const numeric = Number(String(rawValue).replace(/,/g, ''));
+                if (!Number.isFinite(numeric)) {
+                    return;
+                }
+                labels.push(rawLabel !== undefined && rawLabel !== null ? String(rawLabel) : `Item ${idx + 1}`);
+                values.push(numeric);
+            });
+
+            if (values.length === 0) {
+                const err = document.createElement('div');
+                err.className = 'chart-empty';
+                err.textContent = 'Chart values are not numeric.';
+                wrapper.appendChild(err);
+                return wrapper;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.className = 'chart-canvas';
+            wrapper.appendChild(canvas);
+
+            const palette = [
+                '#4da3ff', '#52d3aa', '#f3b35c', '#f77f7f', '#9d8df1', '#7cc5ff',
+                '#6bd4a4', '#f4c06f', '#f08a9f', '#7dd3fc', '#34d399', '#fbbf24'
+            ];
+            const colors = labels.map((_, idx) => palette[idx % palette.length]);
+
+            const chartConfig = {
+                type: kind,
+                data: {
+                    labels,
+                    datasets: [{
+                        label: kind === 'pie' ? (chartSpec?.title || 'Distribution') : String(yKey),
+                        data: values,
+                        backgroundColor: kind === 'line' ? 'rgba(77, 163, 255, 0.2)' : colors,
+                        borderColor: kind === 'line' ? '#4da3ff' : colors,
+                        hoverBackgroundColor: kind === 'line' ? 'rgba(77, 163, 255, 0.2)' : colors,
+                        hoverBorderColor: kind === 'line' ? '#4da3ff' : colors,
+                        hoverBorderWidth: 2,
+                        hoverOffset: 0,
+                        borderWidth: 2,
+                        tension: 0.2,
+                        fill: kind === 'line'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    events: [],
+                    interaction: {
+                        mode: undefined
+                    },
+                    plugins: {
+                        tooltip: {
+                            enabled: false
+                        },
+                        legend: {
+                            display: kind === 'pie',
+                            labels: { color: '#e0e0e0' }
+                        },
+                        datalabels: {
+                            color: '#f8f8f8',
+                            font: { weight: '600' },
+                            anchor: kind === 'pie' ? 'center' : 'end',
+                            align: kind === 'pie' ? 'center' : 'top',
+                            offset: kind === 'pie' ? 0 : 2,
+                            clamp: true,
+                            formatter: (value) => `${value}`
+                        }
+                    },
+                    scales: kind === 'pie' ? {} : {
+                        x: {
+                            ticks: { color: '#d0d0d0' },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        },
+                        y: {
+                            ticks: { color: '#d0d0d0' },
+                            grid: { color: 'rgba(255,255,255,0.08)' }
+                        }
+                    }
+                }
+            };
+
+            // Build chart after the wrapper is attached to the DOM to avoid zero-size layout.
+            requestAnimationFrame(() => {
+                ensureChartPluginsRegistered();
+                new Chart(canvas, chartConfig);
+            });
+
+            return wrapper;
+        }
+
+        function addMessage(text, role, metadata = null, table = null, intent = null, chart = null) {
             const div = document.createElement('div');
             div.className = `message ${role}`;
 
             if (role === 'bot') {
                 let renderText = text || '';
                 let fallbackTable = null;
-                const allowTableRender = String(intent || '').toLowerCase() === 'analytics';
+                const allowAnalyticsRender = String(intent || '').toLowerCase() === 'analytics';
 
-                if (allowTableRender && table && table.rows && table.rows.length > 0) {
+                if (allowAnalyticsRender && table && table.rows && table.rows.length > 0) {
                     renderText = stripMarkdownTables(renderText);
-                } else if (allowTableRender) {
+                } else if (allowAnalyticsRender) {
                     fallbackTable = parseSpaceAlignedTable(renderText);
                     if (fallbackTable) {
                         renderText = fallbackTable.leadText || '';
@@ -670,16 +860,21 @@
                 const contentDiv = document.createElement('div');
                 if (renderText.trim()) {
                     contentDiv.innerHTML = marked.parse(renderText);
-                    if (allowTableRender) {
+                    if (allowAnalyticsRender) {
                         normalizeRenderedTables(contentDiv);
                     }
                     div.appendChild(contentDiv);
                 }
 
-                if (allowTableRender && table && table.rows && table.rows.length > 0) {
+                if (allowAnalyticsRender && chart && Array.isArray(chart.data) && chart.data.length > 0) {
+                    const chartEl = renderChart(chart);
+                    div.appendChild(chartEl);
+                }
+
+                if (allowAnalyticsRender && table && table.rows && table.rows.length > 0) {
                     const tableEl = renderTable(table, { analytics: true });
                     div.appendChild(tableEl);
-                } else if (allowTableRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
+                } else if (allowAnalyticsRender && fallbackTable && fallbackTable.table && fallbackTable.table.rows.length > 0) {
                     const tableEl = renderTable(fallbackTable.table, { analytics: true });
                     div.appendChild(tableEl);
                 }
@@ -858,7 +1053,7 @@
                 const data = await response.json();
 
                 if (data.answer) {
-                    addMessage(data.answer, 'bot', data.metadata, data.table, data.intent);
+                    addMessage(data.answer, 'bot', data.metadata, data.table, data.intent, data.chart);
                     if (data.intent === 'end') {
                         // Session was cleared on backend, let's clear local UI too for next turn
                         setTimeout(() => {

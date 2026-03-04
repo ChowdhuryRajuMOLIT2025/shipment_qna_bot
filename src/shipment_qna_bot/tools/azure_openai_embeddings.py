@@ -15,9 +15,6 @@ from openai import AzureOpenAI
 
 from shipment_qna_bot.utils.runtime import is_test_mode
 
-# from azure.ai.openai import AzureOpenAI
-# from azure.ai.openai.schemas import Embeddings
-
 
 class AzureOpenAIEmbeddingsClient:
     def __init__(self) -> None:
@@ -52,7 +49,7 @@ class AzureOpenAIEmbeddingsClient:
             api_key=api_key,
             api_version=api_version,
             timeout=self._timeout_s,
-            max_retries=int(os.getenv("AZURE_OPENAI_EMBED_MAX_RETRIES", "5")),
+            max_retries=int(os.getenv("AZURE_OPENAI_EMBED_MAX_RETRIES", "3")),
         )
 
     def embed_query(self, text: str) -> List[float]:
@@ -61,7 +58,7 @@ class AzureOpenAIEmbeddingsClient:
         text = (text or "").strip()
         if not text:
             return []
-        max_retries = int(os.getenv("AZURE_OPENAI_EMBED_MAX_RETRIES", "5"))
+        max_retries = int(os.getenv("AZURE_OPENAI_EMBED_MAX_RETRIES", "3"))
         base_delay = float(os.getenv("AZURE_OPENAI_EMBED_RETRY_DELAY", "1.0"))
         last_error: Exception | None = None
         transient_markers = [
@@ -85,7 +82,7 @@ class AzureOpenAIEmbeddingsClient:
         for attempt in range(1, max_retries + 1):
             try:
                 text_input = str(text)
-                resp = self._client.embeddings.create(
+                resp = self._client.embeddings.create(  # type: ignore
                     model=self._deployment,
                     input=text_input,
                     timeout=self._timeout_s,

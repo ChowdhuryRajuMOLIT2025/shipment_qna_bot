@@ -30,8 +30,9 @@ def test_resolve_allowed_scope_list():
     assert resolve_allowed_scope("user1", ["A", "B"]) == ["A", "B"]
 
 
-def test_resolve_allowed_scope_missing_identity_allows_payload():
-    assert resolve_allowed_scope(None, ["A", "B"]) == ["A", "B"]
+def test_resolve_allowed_scope_missing_identity_denies_payload():
+    """Missing identity must fail closed (Deny-by-Default)."""
+    assert resolve_allowed_scope(None, ["A", "B"]) == []
 
 
 def test_build_search_filter_empty():

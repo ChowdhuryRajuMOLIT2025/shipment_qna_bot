@@ -152,7 +152,13 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         request.session.clear()
         logger.info("Session cleared due to 'end' intent.", extra={"step": "API:/chat"})
 
-    answer_text = result.get("answer_text", "-") or "-"
+    answer_text = result.get("answer_text")
+    if not answer_text:
+        errors = result.get("errors", [])
+        if errors:
+            answer_text = f"I encountered issues processing your request: {'; '.join(map(str, errors))}"
+        else:
+            answer_text = "I'm sorry, I couldn't generate an answer for your request."
 
     logger.info(
         "Graph execution completed: intent=%s, answer_preview='%s...'",

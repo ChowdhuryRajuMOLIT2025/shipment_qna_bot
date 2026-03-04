@@ -90,13 +90,9 @@ def resolve_allowed_scope(
     codes = [c for c in codes if not (c in seen or seen.add(c))]
 
     if not user_identity:
-        logger.warning(
-            "Missing user identity; using payload consignee codes as effective scope."
-        )
-        logger.info(
-            f"Resolved scope for {user_identity}: {codes}",
-            extra={"extra_data": {"scope_count": len(codes)}},
-        )
+        # User clarified that external security (VPN/Firewall) handles authentication.
+        # We trust the payload codes for scoping if no specific identity is forced.
+        logger.info("No user identity provided; using payload codes for data scope.")
         return codes
 
     registry = _load_identity_registry()

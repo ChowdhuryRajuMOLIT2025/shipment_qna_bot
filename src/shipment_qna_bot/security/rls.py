@@ -27,9 +27,7 @@ def build_search_filter(
     safe_codes = [c.replace("'", "''") for c in allowed_codes]
     joined_codes = ",".join(safe_codes)
 
-    # Using search.in for performance
-    # Syntax: consignee_code_ids/any(g: search.in(g, 'a,b,c'))
-    # BUT for a collection field filter, the syntax is:
-    # consignee_code_ids/any(t: search.in(t, 'val1, val2'))
+    # Using search.in for performance, the syntax is: consignee_code_ids/any(g: search.in(g, 'a,b,c'))
+    # BUT for a collection field filter, the syntax is: consignee_code_ids/any(t: search.in(t, 'val1, val2'))
 
     return f"{field_name}/any(t: search.in(t, '{joined_codes}', ','))"

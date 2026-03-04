@@ -158,9 +158,8 @@ def intent_node(state: GraphState) -> GraphState:
                 "goodbye",
                 "quit",
                 "exit",
-                "end",
-                "thank you",
-                "thanks",
+                "end chat",
+                "close session",
             }
 
             intent = "retrieval"
@@ -221,7 +220,7 @@ def intent_node(state: GraphState) -> GraphState:
             "   - 'clarification': Use IF AND ONLY IF the user's query is too vague, ambiguous, or lacks necessary context to decide between analytics/retrieval or to perform the action. Examples: 'Show me dates' (Which dates?), 'List shipments' (All of them? Too generic).\n"
             "   - 'greeting': Use for 'hi', 'hello', etc.\n"
             "   - 'company_overview': Use for questions about the company itself.\n"
-            "   - 'end': Use for 'bye', 'thank you', etc.\n"
+            "   - 'end': Use ONLY for explicit farewells or requests to close the session (e.g., 'bye', 'goodbye', 'end chat', 'quit'). Do NOT use for simple 'thank you' or praise if the user might have follow-up questions.\n"
             "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
             "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"
             "Output JSON ONLY:\n"

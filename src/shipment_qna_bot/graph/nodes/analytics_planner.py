@@ -65,7 +65,7 @@ def _merge_usage(state: Dict[str, Any], usage: Optional[Dict[str, Any]]) -> None
     }
     for k, v in usage.items():
         if isinstance(v, (int, float)):
-            usage_metadata[k] = usage_metadata.get(k, 0) + v
+            usage_metadata[k] = usage_metadata.get(k, 0) + v  # type: ignore
     state["usage_metadata"] = usage_metadata
 
 
@@ -174,13 +174,13 @@ def _build_table_spec_from_exec(
         rows = None
 
     if isinstance(columns, list) and isinstance(rows, list) and columns and rows:
-        safe_columns = [str(c) for c in columns]
+        safe_columns = [str(c) for c in columns]  # type: ignore
         safe_rows: List[Dict[str, Any]] = []
-        for row in rows[:500]:
+        for row in rows[:500]:  # type: ignore
             if not isinstance(row, dict):
                 continue
-            safe_row = {col: row.get(col) for col in safe_columns}
-            safe_rows.append(safe_row)
+            safe_row = {col: row.get(col) for col in safe_columns}  # type: ignore
+            safe_rows.append(safe_row)  # type: ignore
 
         if safe_rows:
             return {
@@ -191,7 +191,7 @@ def _build_table_spec_from_exec(
 
     result_value = exec_result.get("result_value")
     if isinstance(result_value, dict) and result_value:
-        dict_rows = [{"label": str(k), "value": v} for k, v in result_value.items()]
+        dict_rows = [{"label": str(k), "value": v} for k, v in result_value.items()]  # type: ignore
         return {
             "columns": ["label", "value"],
             "rows": dict_rows[:500],
@@ -199,22 +199,22 @@ def _build_table_spec_from_exec(
         }
 
     if isinstance(result_value, list) and result_value:
-        first = result_value[0]
+        first = result_value[0]  # type: ignore
         if isinstance(first, dict):
             cols: List[str] = []
-            for item in result_value:
+            for item in result_value:  # type: ignore
                 if not isinstance(item, dict):
                     continue
-                for key in item.keys():
-                    k = str(key)
+                for key in item.keys():  # type: ignore
+                    k = str(key)  # type: ignore
                     if k not in cols:
                         cols.append(k)
             if cols:
                 list_rows: List[Dict[str, Any]] = []
-                for item in result_value[:500]:
+                for item in result_value[:500]:  # type: ignore
                     if not isinstance(item, dict):
                         continue
-                    list_rows.append({c: item.get(c) for c in cols})
+                    list_rows.append({c: item.get(c) for c in cols})  # type: ignore
                 if list_rows:
                     return {
                         "columns": cols,
@@ -222,7 +222,7 @@ def _build_table_spec_from_exec(
                         "title": "Analytics Result",
                     }
         else:
-            scalar_rows = [{"value": item} for item in result_value[:500]]
+            scalar_rows = [{"value": item} for item in result_value[:500]]  # type: ignore
             return {
                 "columns": ["value"],
                 "rows": scalar_rows,
@@ -240,28 +240,28 @@ def _build_chart_spec_from_table(
     if not isinstance(table_spec, dict):
         return None
 
-    columns = table_spec.get("columns") or []
-    rows = table_spec.get("rows") or []
+    columns = table_spec.get("columns") or []  # type: ignore
+    rows = table_spec.get("rows") or []  # type: ignore
     if not isinstance(columns, list) or not isinstance(rows, list):
         return None
-    if len(columns) < 2 or len(rows) == 0:
+    if len(columns) < 2 or len(rows) == 0:  # type: ignore
         return None
 
-    sample_rows = [r for r in rows[:80] if isinstance(r, dict)]
+    sample_rows = [r for r in rows[:80] if isinstance(r, dict)]  # type: ignore
     if not sample_rows:
         return None
 
     numeric_cols: List[str] = []
     categorical_cols: List[str] = []
-    for col in columns:
+    for col in columns:  # type: ignore
         numeric_hits = 0
-        for row in sample_rows:
-            if _as_float(row.get(col)) is not None:
+        for row in sample_rows:  # type: ignore
+            if _as_float(row.get(col)) is not None:  # type: ignore
                 numeric_hits += 1
         if numeric_hits > 0:
-            numeric_cols.append(str(col))
+            numeric_cols.append(str(col))  # type: ignore
         else:
-            categorical_cols.append(str(col))
+            categorical_cols.append(str(col))  # type: ignore
 
     if not numeric_cols:
         return None
@@ -269,18 +269,18 @@ def _build_chart_spec_from_table(
     kind = _chart_kind(question)
 
     if kind == "pie":
-        label_col = categorical_cols[0] if categorical_cols else str(columns[0])
+        label_col = categorical_cols[0] if categorical_cols else str(columns[0])  # type: ignore
         value_col = (
             next((c for c in numeric_cols if c != label_col), None) or numeric_cols[0]
         )
         chart_data: List[Dict[str, Any]] = []
-        for row in sample_rows[:50]:
-            value = _as_float(row.get(value_col))
+        for row in sample_rows[:50]:  # type: ignore
+            value = _as_float(row.get(value_col))  # type: ignore
             if value is None:
                 continue
-            label = row.get(label_col)
+            label = row.get(label_col)  # type: ignore
             chart_data.append(
-                {label_col: str(label) if label is not None else "-", value_col: value}
+                {label_col: str(label) if label is not None else "-", value_col: value}  # type: ignore
             )
         if not chart_data:
             return None
@@ -291,16 +291,16 @@ def _build_chart_spec_from_table(
             "encodings": {"label": label_col, "value": value_col},
         }
 
-    x_col = categorical_cols[0] if categorical_cols else str(columns[0])
+    x_col = categorical_cols[0] if categorical_cols else str(columns[0])  # type: ignore
     y_col = next((c for c in numeric_cols if c != x_col), None) or numeric_cols[0]
 
     chart_data = []
-    for row in sample_rows[:80]:
-        y_val = _as_float(row.get(y_col))
+    for row in sample_rows[:80]:  # type: ignore
+        y_val = _as_float(row.get(y_col))  # type: ignore
         if y_val is None:
             continue
         point: Dict[str, Any] = {
-            x_col: row.get(x_col),
+            x_col: row.get(x_col),  # type: ignore
             y_col: y_val,
         }
         chart_data.append(point)
@@ -329,18 +329,18 @@ def _normalize_identifier_values(raw_value: Any) -> List[str]:
         return []
 
     if isinstance(raw_value, list):
-        values = raw_value
+        values = raw_value  # type: ignore
     else:
         values = [raw_value]
 
     normalized: List[str] = []
-    for value in values:
+    for value in values:  # type: ignore
         if value is None:
             continue
         if isinstance(value, str) and "," in value:
             parts = [part.strip() for part in value.split(",")]
         else:
-            parts = [str(value).strip()]
+            parts = [str(value).strip()]  # type: ignore
         for part in parts:
             cleaned = part.strip().upper()
             if cleaned:
@@ -355,7 +355,7 @@ def _selector_has_ids(selector: Optional[Dict[str, Any]]) -> bool:
     if not isinstance(raw_ids, dict):
         return False
     for field in ("container_number", "po_numbers", "booking_numbers", "obl_nos"):
-        if _normalize_identifier_values(raw_ids.get(field)):
+        if _normalize_identifier_values(raw_ids.get(field)):  # type: ignore
             return True
     return False
 
@@ -372,11 +372,11 @@ def _build_result_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str, An
         "obl_nos": [],
     }
 
-    for row in result_rows:
+    for row in result_rows:  # type: ignore
         if not isinstance(row, dict):
             continue
         for field in ids.keys():
-            values = _normalize_identifier_values(row.get(field))
+            values = _normalize_identifier_values(row.get(field))  # type: ignore
             if values:
                 ids[field].extend(values)
 
@@ -390,7 +390,7 @@ def _build_result_selector(exec_result: Dict[str, Any]) -> Optional[Dict[str, An
     return {
         "kind": "id_sets",
         "ids": normalized_ids,
-        "row_count": len([row for row in result_rows if isinstance(row, dict)]),
+        "row_count": len([row for row in result_rows if isinstance(row, dict)]),  # type: ignore
     }
 
 
@@ -456,17 +456,17 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     return state
 
                 selector = selector_candidate
-                selector_count = selector.get("row_count")
+                selector_count = selector.get("row_count")  # type: ignore
                 scope_label = "previous analytics result scope"
                 if isinstance(selector_count, int) and selector_count >= 0:
                     scope_label = (
                         f"previous analytics result scope ({selector_count} rows)"
                     )
 
-            engine.prepare_view(parquet_path, consignee_codes, selector=selector)
+            engine.prepare_view(parquet_path, consignee_codes, selector=selector)  # type: ignore
 
             scope_row_count = engine.con.sql("SELECT count(*) AS row_count FROM df").fetchone()[0]  # type: ignore
-            if int(scope_row_count or 0) <= 0:
+            if int(scope_row_count or 0) <= 0:  # type: ignore
                 if analytics_context_mode == "previous_result":
                     state["answer_text"] = (
                         "The previous analytics result list no longer matches any rows in the current session data. "
@@ -485,7 +485,7 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
             if analytics_context_mode == "previous_result":
                 state.setdefault("notices", []).append(
-                    f"Applied previous analytics result scope ({int(scope_row_count)} rows)."
+                    f"Applied previous analytics result scope ({int(scope_row_count)} rows)."  # type: ignore
                 )
 
             sample_rel = engine.con.sql("SELECT * FROM df LIMIT 5")
@@ -513,7 +513,7 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         # 2. Prepare Context
         head_sample = df_head.to_markdown(index=False)
-        shape_info = f"Rows in scope: {int(scope_row_count)}; Columns: {len(columns)}"
+        shape_info = f"Rows in scope: {int(scope_row_count)}; Columns: {len(columns)}"  # type: ignore
 
         ready_ref_content = load_ready_ref()
         col_ref = format_analytics_column_reference(columns)
@@ -631,7 +631,7 @@ ORDER BY best_eta_dp_date DESC;
         exec_result = engine.execute_query(
             parquet_path,
             generated_sql,
-            consignee_codes,
+            consignee_codes,  # type: ignore
             selector=selector,
         )
 
@@ -656,7 +656,7 @@ ORDER BY best_eta_dp_date DESC;
                     exec_result = engine.execute_query(
                         parquet_path,
                         generated_sql,
-                        consignee_codes,
+                        consignee_codes,  # type: ignore
                         selector=selector,
                     )
             except Exception as repair_exc:

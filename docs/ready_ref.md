@@ -23,16 +23,16 @@ This file serves as a **Ready Reference** for the LLM to follow operational SQL 
 **Logic:**
 - Filter: `dp_delayed_dur > 0`
 - Date Column: `best_eta_dp_date` (Format: '%d-%b-%Y')
-- Display Protocol: Show container,po_numbers, best_eta_dp_date, and delay days.
+- Display Protocol: Show container, discharge_port, best_eta_dp_date, and delay days.
 
 **DuckDB SQL:**
 ```sql
 SELECT
     container_number,
-    po_numbers,
+    discharge_port,
     strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
     dp_delayed_dur,
-    shipment_status
+    -- shipment_status
 FROM df
 WHERE dp_delayed_dur > 0
 ORDER BY best_eta_dp_date DESC;
@@ -43,16 +43,16 @@ ORDER BY best_eta_dp_date DESC;
 **Logic:**
 - Filter: `fd_delayed_dur > 0`
 - Date Column: `eta_fd_date` or `best_eta_fd_date`
-- Display Protocol: Show container, FD date, and FD delay days.
+- Display Protocol: Show container, FD, FD date, and FD delay days.
 
 **DuckDB SQL:**
 ```sql
 SELECT
     container_number,
-    po_numbers,
+    final_destination,
     strftime(best_eta_fd_date, '%d-%b-%Y') AS best_eta_fd_date,
     fd_delayed_dur,
-    final_destination
+    -- shipment_status
 FROM df
 WHERE fd_delayed_dur > 0
 ORDER BY best_eta_fd_date DESC;
@@ -80,10 +80,13 @@ ORDER BY best_eta_dp_date DESC NULLS LAST;
 ### Scenario D: Delivered Shipments to Consignee (Final Destination)
 **User Query:** "Show delivered shipments to consignee" (or "Delivered to consignee")
 **Logic:**
-- DP Reached: `best_eta_dp_date` is not null **and** `< today`.
+<!-- - DP Reached: `best_eta_dp_date` is not null **and** `< today`.
+- Delivered: `delivery_to_consignee_date` **or** `empty_container_return_date` is not null.
+- Not Delivered: If **both** delivery dates are null, then it is **not** delivered (even if DP reached). -->
+- DP Reached: `ata_dp_date` is not null.
 - Delivered: `delivery_to_consignee_date` **or** `empty_container_return_date` is not null.
 - Not Delivered: If **both** delivery dates are null, then it is **not** delivered (even if DP reached).
-- Display Protocol: Show container, PO, DP date, delivery/return dates, and status.
+- Display Protocol: Show container, PO, DP location, DP date, final_destination, delivery/return dates, and status.
 
 **DuckDB SQL:**
 ```sql
@@ -91,22 +94,22 @@ SELECT
     container_number,
     po_numbers,
     discharge_port,
-    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
+    strftime(ata_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
     final_destination,
     strftime(delivery_to_consignee_date, '%d-%b-%Y') AS delivery_to_consignee_date,
     strftime(empty_container_return_date, '%d-%b-%Y') AS empty_container_return_date,
     shipment_status
 FROM df
-WHERE best_eta_dp_date IS NOT NULL
-  AND best_eta_dp_date < CURRENT_DATE
+WHERE ata_dp_date IS NOT NULL
+--   AND best_eta_dp_date < CURRENT_DATE
   AND (
       delivery_to_consignee_date IS NOT NULL
       OR empty_container_return_date IS NOT NULL
   )
-ORDER BY best_eta_dp_date DESC;
+ORDER BY ata_dp_date DESC;
 ```
 
-### Scenario E: Next 5-Day Container Schedule (Nashville Example)
+### Scenario E: Next 5-Day PO/Container Schedule (Nashville Example)
 **User Query:** "Next 5 day container schedule for Nashville" (or "shipments coming in next 10 days at Savannah")
 **Logic:**
 - Arrival window based on `best_eta_dp_date`
@@ -125,7 +128,7 @@ FROM df
 WHERE discharge_port ILIKE '%nashville%'
   AND best_eta_dp_date >= CURRENT_DATE
   AND best_eta_dp_date <= CURRENT_DATE + INTERVAL 5 DAY
-ORDER BY best_eta_dp_date ASC;
+ORDER BY best_eta_dp_date DESC;
 ```
 
 ### Scenario F: Shipment Not Yet Arrived At DP (Missed ETA / Overdue)

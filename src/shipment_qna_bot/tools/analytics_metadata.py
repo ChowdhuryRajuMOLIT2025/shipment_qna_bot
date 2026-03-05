@@ -369,7 +369,7 @@ _FIELD_SYNONYMS = _build_field_synonyms(_FIELD_ALIAS_TO_COLUMN)
 
 # Ensure every metadata entry has the new `synonyms` key.
 for _col, _meta in ANALYTICS_METADATA.items():
-    _meta["synonyms"] = _FIELD_SYNONYMS.get(_col, [])
+    _meta["synonyms"] = _FIELD_SYNONYMS.get(_col, [])  # type: ignore
 
 
 def format_analytics_column_reference(columns: Iterable[str]) -> str:
@@ -383,9 +383,9 @@ def format_analytics_column_reference(columns: Iterable[str]) -> str:
             continue
 
         line = f"- `{col}`: {meta['desc']} (Type: {meta['type']})"
-        synonyms = meta.get("synonyms") or []
+        synonyms = meta.get("synonyms") or []  # type: ignore
         if synonyms:
-            rendered_synonyms = ", ".join(f"`{alias}`" for alias in synonyms)
+            rendered_synonyms = ", ".join(f"`{alias}`" for alias in synonyms)  # type: ignore
             line += f"; Synonyms: {rendered_synonyms}"
         lines.append(line)
 

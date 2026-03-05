@@ -6,11 +6,12 @@ from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
-from shipment_qna_bot.tools.analytics_metadata import (ANALYTICS_METADATA,
-                                                       INTERNAL_COLUMNS)
+from shipment_qna_bot.tools.analytics_metadata import (
+    INTERNAL_COLUMNS, format_analytics_column_reference)
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.duckdb_engine import DuckDBAnalyticsEngine
+from shipment_qna_bot.tools.ready_ref import load_ready_ref
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _CHAT_TOOL: Optional[AzureOpenAIChatTool] = None
@@ -514,28 +515,8 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
         head_sample = df_head.to_markdown(index=False)
         shape_info = f"Rows in scope: {int(scope_row_count)}; Columns: {len(columns)}"
 
-        # Load Ready Reference if available
-        ready_ref_content = ""
-        try:
-            import os
-
-            ready_ref_path = "docs/ready_ref.md"
-            if not os.path.exists(ready_ref_path):
-                base_dir = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "../../../../")
-                )
-                ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
-
-            if os.path.exists(ready_ref_path):
-                with open(ready_ref_path, "r") as f:
-                    ready_ref_content = f.read()
-        except Exception as e:
-            logger.warning(f"Could not load ready_ref.md: {e}")
-
-        col_ref = ""
-        for k, v in ANALYTICS_METADATA.items():
-            if k in columns:
-                col_ref += f"- `{k}`: {v['desc']} (Type: {v['type']})\n"
+        ready_ref_content = load_ready_ref()
+        col_ref = format_analytics_column_reference(columns)
 
         system_prompt = f"""
 You are a SQL Data Analyst powered by DuckDB. You have access to a view `df` containing shipment data.

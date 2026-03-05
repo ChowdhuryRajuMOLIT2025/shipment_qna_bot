@@ -7,6 +7,7 @@ from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.date_tools import get_today_date
+from shipment_qna_bot.tools.ready_ref import load_ready_ref
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: Optional[AzureOpenAIChatTool] = None
@@ -245,25 +246,8 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     )
                 context_str += f"Status Breakdown: {facet_summary}\n"
 
-        # Load Ready Reference
-        ready_ref_content = ""
-        try:
-            import os
-
-            # Try relative path first (assuming running from root)
-            ready_ref_path = "docs/ready_ref.md"
-            if not os.path.exists(ready_ref_path):
-                # Fallback: try absolute path based on file location
-                base_dir = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "../../../../")
-                )
-                ready_ref_path = os.path.join(base_dir, "docs", "ready_ref.md")
-
-            if os.path.exists(ready_ref_path):
-                with open(ready_ref_path, "r") as f:
-                    ready_ref_content = f.read()
-        except Exception:
-            pass  # Fail silently/gracefully
+        # Load operational reference (without dataset schema section).
+        ready_ref_content = load_ready_ref()
 
         # 2. Add Documents Context
         if hits:

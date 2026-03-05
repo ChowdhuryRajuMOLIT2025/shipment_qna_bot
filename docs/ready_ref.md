@@ -16,6 +16,17 @@ This file serves as a **Ready Reference** for the LLM to follow operational SQL 
 - Date priority for sorting: `best_eta_dp_date` -> `best_eta_fd_date` -> `ata_dp_date` -> `derived_ata_dp_date` -> `eta_dp_date` -> `eta_fd_date`.
 - Apply `.dt.strftime('%d-%b-%Y')` only after sorting.
 
+### Default Capping Policy (When User Gives No Duration)
+- Future arrival/delivery intent (`will arrive`, `will be delivered`, `upcoming`) must be capped to:
+  - `CURRENT_DATE` to `CURRENT_DATE + INTERVAL 30 DAY`
+- Past arrived/received/delivered intent (`arrived`, `received`, `delivered`) must be capped to:
+  - `CURRENT_DATE - INTERVAL 30 DAY` to `CURRENT_DATE`
+- Delay/Early intent without explicit duration must use default threshold:
+  - `>= 7 days` for delayed
+  - `<= -7 days` for early
+- If any default cap/threshold is applied, explicitly mention it in the response note.
+- If user provides explicit date range/duration, do not apply these defaults.
+
 ## 1. Reference Scenarios (Operational Queries)
 
 ### Scenario A: Delayed Shipments (Discharge Port)
@@ -113,7 +124,7 @@ ORDER BY ata_dp_date DESC;
 **User Query:** "Next 5 day container schedule for Nashville" (or "shipments coming in next 10 days at Savannah")
 **Logic:**
 - Arrival window based on `best_eta_dp_date`
-- Filter: `discharge_port` contains the city
+- Filter: `discharge_port` contains the city AND `ata_dp_date` NULL
 - Display Protocol: Show container, PO, arrival date, load port, discharge port.
 
 **DuckDB SQL:**
@@ -157,3 +168,5 @@ WHERE discharge_port ILIKE '%nashville%'
   AND best_eta_dp_date <= CURRENT_DATE
 ORDER BY best_eta_dp_date DESC;
 ```
+
+

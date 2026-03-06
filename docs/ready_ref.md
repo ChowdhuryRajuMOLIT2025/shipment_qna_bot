@@ -13,27 +13,42 @@ This file serves as a **Ready Reference** for the LLM to follow operational SQL 
 
 ### Sorting Policy (Global)
 - For tabular/list outputs with date columns, sort by latest date first (descending) before formatting dates.
-- Date priority for sorting: `best_eta_dp_date` -> `best_eta_fd_date` -> `ata_dp_date` -> `derived_ata_dp_date` -> `eta_dp_date` -> `eta_fd_date`.
+- Date priority for sorting: `best_eta_dp_date` -> `ata_dp_date` -> `eta_dp_date` -> `best_eta_fd_date` -> `eta_fd_date`.
 - Apply `.dt.strftime('%d-%b-%Y')` only after sorting.
 
 ### Default Capping Policy (When User Gives No Duration)
-- Future arrival/delivery intent (`will arrive`, `will be delivered`, `upcoming`) must be capped to:
+- Future arrival/delivery intent (`will arrive`, `will be delivered`, `upcoming`, `will going`, `will come`, `will be coming`) must be capped to:
   - `CURRENT_DATE` to `CURRENT_DATE + INTERVAL 30 DAY`
 - Past arrived/received/delivered intent (`arrived`, `received`, `delivered`) must be capped to:
   - `CURRENT_DATE - INTERVAL 30 DAY` to `CURRENT_DATE`
 - Delay/Early intent without explicit duration must use default threshold:
-  - `>= 7 days` for delayed
+  - `<= 7 days` for delayed
   - `<= -7 days` for early
 - If any default cap/threshold is applied, explicitly mention it in the response note.
 - If user provides explicit date range/duration, do not apply these defaults.
 
+### Country Alias Handling (Location)
+- If user asks by country without explicit `dp` or `fd`, apply location filter on both:
+  - `(discharge_port ILIKE ... OR final_destination ILIKE ...)`
+- If user explicitly says `dp`, apply country filter only on `discharge_port`.
+- If user explicitly says `fd`, apply country filter only on `final_destination`.
+- Alias mapping for common country asks:
+  - `AMERICA` / `USA` / `US` / `UNITED STATES` -> use `%(us%`,`%(US%`
+  - `CHAINA` / `CHINA` -> use `%(CN%`
+  - `EUROPE` -> use common Europe markers like and EU-country code markers such as `%(DE%`, `%(FR%`, `%(NL%`, `%(BE%`, `%(ES%`, `%(IT%`, `%(GB%`
+
 ## 1. Reference Scenarios (Operational Queries)
 
 ### Scenario A: Delayed Shipments (Discharge Port)
-**User Query:** "How many shipments are delayed?" (or "Show delayed shipments")
+**User Query:** “How many shipments are delayed?” OR
+                “Show delayed shipments.” OR
+                “Which DP shipments arrived late?”
 **Logic:**
-- Filter: `dp_delayed_dur > 0`
+- Filter: `ata_dp_date` IS NOT NULL
 - Date Column: `best_eta_dp_date` (Format: '%d-%b-%Y')
+- Delayed if: `dp_delayed_dur > 0`
+- If user provides explicit date range/duration, do not apply defaults.
+- If user provides no duration `best_eta_dp_date >=  CURRENT_DATE AND best_eta_dp_date <= INTERVAL(CURRENT_DATE + 30)` Delay default threshold `dp_delayed_dur >= 7`
 - Display Protocol: Show container, discharge_port, best_eta_dp_date, and delay days.
 
 **DuckDB SQL:**
@@ -45,7 +60,7 @@ SELECT
     dp_delayed_dur,
     -- shipment_status
 FROM df
-WHERE dp_delayed_dur > 0
+WHERE ata_dp_date IS NOT NULL
 ORDER BY best_eta_dp_date DESC;
 ```
 

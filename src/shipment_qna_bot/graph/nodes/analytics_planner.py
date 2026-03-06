@@ -1,3 +1,5 @@
+# src/shipment_qna_bot/graph/nodes/analytics_planner.py
+
 import json  # type: ignore
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
@@ -261,9 +263,9 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
         ):
             return sql, None
     else:
-        date_expr = "COALESCE(ata_dp_date, derived_ata_dp_date)"
+        date_expr = "COALESCE(ata_dp_date, best_eta_dp_date)"
         if re.search(
-            r"\b(ata_dp_date|derived_ata_dp_date)\b\s*(<=|>=|=|<|>|between)\b",
+            r"\b(ata_dp_date|best_eta_dp_date)\b\s*(<=|>=|=|<|>|between)\b",
             sql,
             re.I,
         ):
@@ -299,11 +301,11 @@ def _apply_default_delay_cap(question: str, sql: str) -> tuple[str, Optional[str
         return sql, None
 
     if mentions_delayed and not mentions_early:
-        condition = f"{delay_col} >= 7"
+        condition = f"{delay_col} <= 7"
     elif mentions_early and not mentions_delayed:
         condition = f"{delay_col} <= -7"
     else:
-        condition = f"ABS({delay_col}) >= 7"
+        condition = f"ABS({delay_col}) <= 7"
 
     updated_sql, changed = _inject_filter_condition(sql, condition)
     if changed:
@@ -720,7 +722,7 @@ def analytics_planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 if not _selector_has_ids(selector_candidate):
                     state["answer_text"] = (
                         "I couldn't reuse the previous analytics result list for this follow-up. "
-                        "Please rerun the previous list query or choose the full session scope."
+                        "Please rerun the previous list query or choose the full scope."
                     )
                     state["is_satisfied"] = True
                     state.setdefault("notices", []).append(
@@ -949,7 +951,7 @@ ORDER BY best_eta_dp_date DESC;
 
         if exec_result["success"]:
             result_rows = exec_result.get("result_rows")
-            if isinstance(result_rows, list) and len(result_rows) == 0:
+            if isinstance(result_rows, list) and len(result_rows) == 0:  # type: ignore
                 if analytics_context_mode == "previous_result":
                     state["answer_text"] = (
                         "I couldn't find any records in the previous analytics result "

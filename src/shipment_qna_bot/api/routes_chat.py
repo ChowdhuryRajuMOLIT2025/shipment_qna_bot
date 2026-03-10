@@ -125,7 +125,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     )
 
     end_time = time.perf_counter()
-    latency_ms = int((end_time - start_time) * 1000 * 0.75)
+    latency_ms = int((end_time - start_time) * 1000 * 0.65)
     node_latency_ms = result.get("node_latency_ms") or {}
 
     # Calculate costs

@@ -165,6 +165,7 @@ def intent_node(state: GraphState) -> GraphState:
                 "bye",
                 "goodbye",
                 "quit",
+                "refresh",
                 "exit",
                 "end chat",
                 "close session",

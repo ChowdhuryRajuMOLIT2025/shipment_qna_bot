@@ -369,7 +369,7 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     search_response = tool.search(
                         query_text=query_text or "*",
                         consignee_codes=consignee_codes,
-                        top_k=int(plan.get("top_k", 8)),
+                        top_k=int(plan.get("top_k", 20)),
                         vector=vector,
                         vector_k=int(plan.get("vector_k", 30)),
                         extra_filter=None,  # Retry without the bad filter

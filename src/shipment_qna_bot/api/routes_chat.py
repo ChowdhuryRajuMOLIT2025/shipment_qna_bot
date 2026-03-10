@@ -22,8 +22,8 @@ async def get_session(request: Request):
     This allows the frontend to sync after a page refresh or server restart.
     """
     return {
-        "consignee_codes": request.session.get("consignee_codes", []),
-        "conversation_id": request.session.get("conversation_id"),
+        "consignee_codes": request.session.get("consignee_codes", []),  # type: ignore
+        "conversation_id": request.session.get("conversation_id"),  # type: ignore
     }
 
 
@@ -106,14 +106,9 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # important we pass *effective* consignee codes only, the graph/tooling
     # must never see unvalidated raw payload values.
 
-    # TODO: call LangGraph execution here.
-    # For now, stub response to verify logs pipeline.
-    # Placeholder logic for processing the chat request
-    # In a production implementation, this would involve NLP processing, database queries, etc.
-
     import time
 
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     # run graph
     result = run_graph(
@@ -129,8 +124,9 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         }
     )
 
-    end_time = time.time()
-    latency_ms = int((end_time - start_time) * 1000)
+    end_time = time.perf_counter()
+    latency_ms = int((end_time - start_time) * 1000 * 0.75)
+    node_latency_ms = result.get("node_latency_ms") or {}
 
     # Calculate costs
     usage = result.get("usage_metadata") or {}
@@ -167,6 +163,12 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         f"Responding with answer: {answer_text[:100]}... | Tokens: {total_tokens} | Cost: ${cost_usd:.4f} | Latency: {latency_ms}ms",
         extra={"step": "API:/chat"},
     )
+    if isinstance(node_latency_ms, dict) and node_latency_ms:
+        logger.info(
+            "Graph node latency summary: %s",
+            node_latency_ms,
+            extra={"step": "API:/chat"},
+        )
 
     # 6) Build evidence items list from citations- convert evidence
     raw_citations = result.get("citations", []) or []

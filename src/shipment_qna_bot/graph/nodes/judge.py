@@ -49,7 +49,7 @@ def judge_node(state: Dict[str, Any]) -> Dict[str, Any]:
             if has_exec_failure:
                 state["is_satisfied"] = False
                 state["reflection_feedback"] = state.get("reflection_feedback") or (
-                    "Retry analytics with safer executable pandas code."
+                    "Retry analytics with safer DuckDB SQL."
                 )
                 state["retry_count"] = state.get("retry_count", 0) + 1
                 logger.info(

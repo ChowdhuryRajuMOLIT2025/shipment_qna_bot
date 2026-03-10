@@ -5,6 +5,8 @@ This file defines the schema, types, and descriptions used for both
 data type casting and LLM dynamic prompt generation.
 """
 
+from typing import Dict, Iterable, List
+
 # Searchable columns with their technical and human-friendly attributes
 ANALYTICS_METADATA = {
     "container_number": {
@@ -321,7 +323,7 @@ INTERNAL_COLUMNS = [
     "consignee_raw",
 ]
 
-COLUMN_SYNONYMS = {
+_FIELD_ALIAS_TO_COLUMN = {
     "weight": "cargo_weight_kg",
     "vol": "cargo_measure_cubic_meter",
     "volume": "cargo_measure_cubic_meter",
@@ -330,8 +332,8 @@ COLUMN_SYNONYMS = {
     "vessel": "final_vessel_name",
     "status": "shipment_status",
     "shipper": "supplier_vendor_name",
-    "arrival": "derived_ata_dp_date",
-    "destination_eta": "optimal_eta_fd_date",
+    "arrival": "ata_dp_date",
+    "destination_eta": "best_eta_fd_date",
     "delay": "dp_delayed_dur",
     "delivery_delay": "fd_delayed_dur",
     "departure": "etd_lp_date",
@@ -345,3 +347,46 @@ COLUMN_SYNONYMS = {
     "shipment": "container_number",
     "obl": "obl_nos",
 }
+
+
+def _build_field_synonyms(alias_map: Dict[str, str]) -> Dict[str, List[str]]:
+    """
+    Convert alias->column mapping into column->list[alias] mapping.
+    Unknown target columns are ignored to keep metadata safe.
+    """
+    field_map: Dict[str, List[str]] = {}
+    for alias, target_col in alias_map.items():
+        if target_col not in ANALYTICS_METADATA:
+            continue
+        field_map.setdefault(target_col, []).append(alias)
+
+    for col, aliases in field_map.items():
+        field_map[col] = sorted(set(aliases))
+    return field_map
+
+
+_FIELD_SYNONYMS = _build_field_synonyms(_FIELD_ALIAS_TO_COLUMN)
+
+# Ensure every metadata entry has the new `synonyms` key.
+for _col, _meta in ANALYTICS_METADATA.items():
+    _meta["synonyms"] = _FIELD_SYNONYMS.get(_col, [])  # type: ignore
+
+
+def format_analytics_column_reference(columns: Iterable[str]) -> str:
+    """
+    Build compact, prompt-ready schema lines for only the active columns.
+    """
+    visible_columns = set(columns)
+    lines: List[str] = []
+    for col, meta in ANALYTICS_METADATA.items():
+        if col not in visible_columns:
+            continue
+
+        line = f"- `{col}`: {meta['desc']} (Type: {meta['type']})"
+        synonyms = meta.get("synonyms") or []  # type: ignore
+        if synonyms:
+            rendered_synonyms = ", ".join(f"`{alias}`" for alias in synonyms)  # type: ignore
+            line += f"; Synonyms: {rendered_synonyms}"
+        lines.append(line)
+
+    return ("\n".join(lines) + "\n") if lines else ""

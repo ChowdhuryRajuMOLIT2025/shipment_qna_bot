@@ -101,6 +101,40 @@ def clarification_node(state: GraphState) -> GraphState:
             state["topic_shift_candidate"] = None
             return state
 
+        analytics_scope = state.get("analytics_scope_candidate")
+        if isinstance(analytics_scope, dict) and analytics_scope:
+            scoped_q = (
+                analytics_scope.get("raw_question")
+                or state.get("question_raw")
+                or question
+            )
+            prev_count = analytics_scope.get("previous_result_count")
+            prev_label = (
+                f"previous analytics result ({prev_count} rows)"
+                if isinstance(prev_count, int) and prev_count >= 0
+                else "previous analytics result"
+            )
+
+            clarification_text = (
+                "I can run this follow-up in two scopes:\n\n"
+                f"1) Use the {prev_label}\n"
+                "2) Use all shipments in your authorized session scope\n\n"
+                "Reply with 1 or 2."
+            )
+
+            state["answer_text"] = clarification_text
+            state["messages"] = [AIMessage(content=clarification_text)]
+            state["is_satisfied"] = True
+            state["intent"] = "clarification"
+            state["pending_analytics_scope"] = {
+                "question_raw": scoped_q,
+                "normalized_question": (
+                    analytics_scope.get("normalized_question") or scoped_q.lower()
+                ),
+            }
+            state["analytics_scope_candidate"] = None
+            return state
+
         if _needs_scope_choice(question):
             analytics_choice = f"Show an analytics summary for: {question}"
             retrieval_choice = (

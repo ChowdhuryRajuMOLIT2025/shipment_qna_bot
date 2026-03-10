@@ -5,6 +5,7 @@ import os
 from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
 from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import SimpleField  # type: ignore
 from azure.search.documents.indexes.models import (HnswAlgorithmConfiguration,
                                                    ScoringProfile, SearchField,
                                                    SearchFieldDataType,
@@ -12,8 +13,8 @@ from azure.search.documents.indexes.models import (HnswAlgorithmConfiguration,
                                                    SemanticConfiguration,
                                                    SemanticField,
                                                    SemanticPrioritizedFields,
-                                                   SemanticSearch, SimpleField,
-                                                   TextWeights, VectorSearch,
+                                                   SemanticSearch, TextWeights,
+                                                   VectorSearch,
                                                    VectorSearchProfile)
 from dotenv import find_dotenv, load_dotenv
 

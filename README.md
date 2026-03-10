@@ -1,6 +1,6 @@
 # Shipment Q&A Chatbot (Hardened Edition)
 
-A high-performance, security-first Shipment Q&A system built with **LangGraph**, **FastAPI**, and **Azure AI Search**. This version features advanced "Bring Your Own Data" (BYOD) analytics and AST-based security hardening.
+A high-performance, security-first Shipment Q&A system built with **LangGraph**, **FastAPI**, and **Azure AI Search**. This version features advanced "Bring Your Own Data" (BYOD) analytics over DuckDB with scoped SQL execution.
 
 ---
 
@@ -10,12 +10,12 @@ The system utilizes a multi-agent orchestration pattern via **LangGraph** to han
 
 - **Intent Detection**: Advanced classification with praise-guardrails to maintain session continuity.
 - **Hybrid Retrieval**: BM25 and Vector search integration via Azure AI Search with enforced Row-Level Security (RLS).
-- **Hardened Analytics (BYOD)**: Dynamic analysis of Parquet/CSV datasets using a constrained AST-parsed Pandas engine.
+- **Hardened Analytics (BYOD)**: Dynamic analysis of Parquet/CSV datasets using DuckDB-backed SQL execution over scoped shipment data.
 - **Response Synthesis**: Context-aware answering with integrated data visualization (Bar/Line charts).
 
 ## 🔒 Security Posture
 
-- **AST-Based RCE Mitigation**: Analytics queries are parsed into Abstract Syntax Trees (AST) to whitelist safe operations and block dangerous functions (`__import__`, `exec`, `eval`), providing a robust sandbox for dynamic code execution.
+- **Scoped DuckDB Analytics**: Analytics run only as DuckDB SQL against an authorized `df` view, removing the old Python code-execution path and keeping queries inside the shipment dataset boundary.
 - **Identity Awareness**: Flexible identity scope resolution designed for VPN/Firewall deployments, balancing infrastructure-level trust with application-level authorization.
 - **Secure API**: Hardened FastAPI implementation with CSP, HSTS, and Frame projection headers.
 - **Persistent Sessions**: Reliable session management using environment-backed encryption keys.
@@ -31,7 +31,7 @@ shipment_qna_bot/
 │   ├── graph/               # LangGraph state machine & node logic
 │   │   ├── nodes/           # Intent, Retrieval, Analytics, Answer nodes
 │   ├── security/            # RLS & Scope resolution logic
-│   ├── tools/               # Azure Search, Pandas Engine, OpenAI clients
+│   ├── tools/               # Azure Search, DuckDB analytics, OpenAI clients
 │   ├── logging/             # Structured JSON observability
 │   └── models/              # Pydantic schemas and state definitions
 ├── tests/                   # Security, Logic, and Performance test suites

@@ -65,6 +65,7 @@ class GraphTracingCallbackHandler(BaseCallbackHandler):
         logger.error(f"LLM Error: {error}", exc_info=True)
 
 
+import time
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, Optional
 
@@ -119,6 +120,34 @@ def _summarize_state(state: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _record_node_latency(
+    state_ref: Optional[Dict[str, Any]], node_name: str, elapsed_ms: float
+) -> None:
+    if not isinstance(state_ref, dict):
+        return
+
+    node_latency = state_ref.get("node_latency_ms")
+    if not isinstance(node_latency, dict):
+        node_latency = {}
+        state_ref["node_latency_ms"] = node_latency
+
+    stats = node_latency.get(node_name)
+    if not isinstance(stats, dict):
+        stats = {"count": 0, "total_ms": 0.0, "avg_ms": 0.0, "last_ms": 0.0}
+
+    stats["count"] = int(stats.get("count") or 0) + 1
+    stats["total_ms"] = round(float(stats.get("total_ms") or 0.0) + elapsed_ms, 3)
+    stats["last_ms"] = round(elapsed_ms, 3)
+    stats["avg_ms"] = round(stats["total_ms"] / stats["count"], 3)
+    node_latency[node_name] = stats
+
+    latency_trace = state_ref.get("node_latency_trace")
+    if not isinstance(latency_trace, list):
+        latency_trace = []
+        state_ref["node_latency_trace"] = latency_trace
+    latency_trace.append({"node": node_name, "elapsed_ms": round(elapsed_ms, 3)})
+
+
 @contextmanager
 def log_node_execution(
     node_name: str,
@@ -129,10 +158,32 @@ def log_node_execution(
     Context manager to log the start and end of a graph node execution.
     """
     context = context or {}
+    start = time.perf_counter()
     logger.info(f"Node execution started: {node_name}", extra={"extra_data": context})
     try:
         yield
-        logger.info(f"Node execution completed: {node_name}")
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        _record_node_latency(state_ref, node_name, elapsed_ms)
+        logger.info(
+            f"Node execution completed: {node_name}",
+            extra={
+                "extra_data": {
+                    "elapsed_ms": round(elapsed_ms, 3),
+                    "node": node_name,
+                }
+            },
+        )
     except Exception as e:
-        logger.error(f"Node execution failed: {node_name} - {e}", exc_info=True)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        _record_node_latency(state_ref, node_name, elapsed_ms)
+        logger.error(
+            f"Node execution failed: {node_name} - {e}",
+            extra={
+                "extra_data": {
+                    "elapsed_ms": round(elapsed_ms, 3),
+                    "node": node_name,
+                }
+            },
+            exc_info=True,
+        )
         raise

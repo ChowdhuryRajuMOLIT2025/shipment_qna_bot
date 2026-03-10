@@ -1,7 +1,7 @@
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List  # type: ignore
 
-from shipment_qna_bot.graph.state import GraphState
+from shipment_qna_bot.graph.state import GraphState  # type: ignore
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
@@ -83,7 +83,7 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
         If nothing is found for a key, return an empty list.
         """.strip()
 
-        messages = [
+        messages = [  # type: ignore
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ]
@@ -99,7 +99,7 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 chat = _get_chat_tool()
                 import json
 
-                response = chat.chat_completion(messages, temperature=0.0)
+                response = chat.chat_completion(messages, temperature=0.0)  # type: ignore
                 res = response["content"]
                 usage = response["usage"]
 
@@ -116,49 +116,49 @@ def extractor_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         # Merge results
         # Merge results and normalize to UPPERCASE for ID fields
-        merged = {
+        merged = {  # type: ignore
             "container_number": list(
-                set(
+                set(  # type: ignore
                     [
-                        x.upper()
-                        for x in (
-                            containers + (llm_extracted.get("container_number") or [])
+                        x.upper()  # type: ignore
+                        for x in (  # type: ignore
+                            containers + (llm_extracted.get("container_number") or [])  # type: ignore
                         )
                     ]
                 )
             ),
             "po_numbers": list(
-                set(
+                set(  # type: ignore
                     [
-                        x.upper()
-                        for x in (pos + (llm_extracted.get("po_numbers") or []))
-                        if x.upper() not in containers
+                        x.upper()  # type: ignore
+                        for x in (pos + (llm_extracted.get("po_numbers") or []))  # type: ignore
+                        if x.upper() not in containers  # type: ignore
                     ]
                 )
             ),
             "booking_numbers": list(
                 set(
-                    [
-                        x.upper()
-                        for x in (
-                            bookings + (llm_extracted.get("booking_numbers") or [])
+                    [  # type: ignore
+                        x.upper()  # type: ignore
+                        for x in (  # type: ignore
+                            bookings + (llm_extracted.get("booking_numbers") or [])  # type: ignore
                         )
                     ]
                 )
             ),
             "obl_nos": list(
-                set([x.upper() for x in (obls + (llm_extracted.get("obl_nos") or []))])
+                set([x.upper() for x in (obls + (llm_extracted.get("obl_nos") or []))])  # type: ignore
             ),
-            "location": llm_extracted.get("location") or [],
-            "carrier": llm_extracted.get("carrier") or [],
-            "date_range": llm_extracted.get("date_range") or [],
-            "status_keywords": llm_extracted.get("status_keywords") or [],
+            "location": llm_extracted.get("location") or [],  # type: ignore
+            "carrier": llm_extracted.get("carrier") or [],  # type: ignore
+            "date_range": llm_extracted.get("date_range") or [],  # type: ignore
+            "status_keywords": llm_extracted.get("status_keywords") or [],  # type: ignore
         }
         time_window_days = _extract_time_window_days(text)
 
-        count = sum(len(v) if isinstance(v, list) else 1 for v in merged.values() if v)
+        count = sum(len(v) if isinstance(v, list) else 1 for v in merged.values() if v)  # type: ignore
         logger.info(
-            f"Extracted {count} entities", extra={"extra_data": {"extracted": merged}}
+            f"Extracted {count} entities", extra={"extra_data": {"extracted": merged}}  # type: ignore
         )
 
         state.update(

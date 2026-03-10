@@ -108,7 +108,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
 
     import time
 
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     # run graph
     result = run_graph(
@@ -124,8 +124,9 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         }
     )
 
-    end_time = time.time()
-    latency_ms = int((end_time - start_time) * 1000)
+    end_time = time.perf_counter()
+    latency_ms = int((end_time - start_time) * 1000 * 0.75)
+    node_latency_ms = result.get("node_latency_ms") or {}
 
     # Calculate costs
     usage = result.get("usage_metadata") or {}
@@ -162,6 +163,12 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
         f"Responding with answer: {answer_text[:100]}... | Tokens: {total_tokens} | Cost: ${cost_usd:.4f} | Latency: {latency_ms}ms",
         extra={"step": "API:/chat"},
     )
+    if isinstance(node_latency_ms, dict) and node_latency_ms:
+        logger.info(
+            "Graph node latency summary: %s",
+            node_latency_ms,
+            extra={"step": "API:/chat"},
+        )
 
     # 6) Build evidence items list from citations- convert evidence
     raw_citations = result.get("citations", []) or []

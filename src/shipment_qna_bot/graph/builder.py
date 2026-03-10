@@ -157,6 +157,8 @@ def run_graph(input_state: dict) -> dict:
     input_state.setdefault("analytics_scope_candidate", None)
     input_state.setdefault("analytics_attempt_count", None)
     input_state.setdefault("analytics_last_error", None)
+    input_state["node_latency_ms"] = {}
+    input_state["node_latency_trace"] = []
 
     # Convert question_raw to a message for history persistence
     from langchain_core.messages import HumanMessage

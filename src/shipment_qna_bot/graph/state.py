@@ -79,6 +79,8 @@ class GraphState(TypedDict):
     usage_metadata: Dict[
         str, Any
     ]  # {prompt_tokens: int, completion_tokens: int, cost_usd: float}
+    node_latency_ms: Optional[Dict[str, Dict[str, float | int]]]
+    node_latency_trace: Optional[List[Dict[str, Any]]]
 
     # --- Errors/Notices ---
     errors: Annotated[List[str], add]

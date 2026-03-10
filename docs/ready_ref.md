@@ -1,219 +1,257 @@
-# Shipment Q&A Bot - Analytics Reference
+# Shipment Q&A Bot - Analytics Ready Reference
 
-This file serves as a **Ready Reference** for the LLM to follow operational SQL patterns and response behavior for common logistics questions.
+This file is injected into LLM prompts to guide SQL generation and answer style.
+Use these rules as deterministic defaults for shipment analytics.
 
-## 0. Response Style And Sorting Policy
+## 0. Response and Behavior Rules
 
 ### Communication Style
 - Tone: soft, calm, respectful.
 - Role: critical thinker.
 - Behavior: acute professional.
-- Keep responses concise, factual, and grounded in the data.
-- If an assumption is used, state it briefly.
+- Keep responses concise, factual, and grounded in data.
+- If assumptions/defaults are applied, mention them in a short note.
 
-### Sorting Policy (Global)
-- For tabular/list outputs with date columns, sort by latest date first (descending) before formatting dates.
-- Date priority for sorting: `best_eta_dp_date` -> `best_eta_fd_date` -> `ata_dp_date` -> `derived_ata_dp_date` -> `eta_dp_date` -> `eta_fd_date`.
-- Apply `.dt.strftime('%d-%b-%Y')` only after sorting.
+### Global Date and Sorting Rules
+- Sort by raw date first, format after sorting.
+- Canonical sort priority for mixed-date outputs:
+  - `COALESCE(CAST(best_eta_dp_date AS DATE), CAST(ata_dp_date AS DATE), CAST(eta_dp_date AS DATE), CAST(best_eta_fd_date AS DATE), CAST(eta_fd_date AS DATE)) DESC NULLS LAST`
+- For displayed dates, use:
+  - `strftime(CAST(date_col AS DATE), '%d-%b-%Y')`
 
-### Default Capping Policy (When User Gives No Duration)
-- Future arrival/delivery intent (`will arrive`, `will be delivered`, `upcoming`) must be capped to:
-  - `CURRENT_DATE` to `CURRENT_DATE + INTERVAL 30 DAY`
-- Past arrived/received/delivered intent (`arrived`, `received`, `delivered`) must be capped to:
-  - `CURRENT_DATE - INTERVAL 30 DAY` to `CURRENT_DATE`
-- Delay/Early intent without explicit duration must use default threshold:
-  - `>= 7 days` for delayed
-  - `<= -7 days` for early
-- If any default cap/threshold is applied, explicitly mention it in the response note.
-- If user provides explicit date range/duration, do not apply these defaults.
+### Default Capping Rules (when user gives no explicit date range or day threshold)
+- Future arrival/delivery intent (upcoming / will arrive / will be delivered):
+  - default window: `CURRENT_DATE` to `CURRENT_DATE + INTERVAL 30 DAY`
+- Past arrived/received/delivered intent:
+  - default window: `CURRENT_DATE - INTERVAL 30 DAY` to `CURRENT_DATE`
+- Delay/Early intent without explicit days:
+  - delayed default cap: `delay_col <= 7`
+  - early default cap: `delay_col <= -7`
+- If any default is applied, mention it in the response note.
 
-## 1. Reference Scenarios (Operational Queries)
+### Country Alias and Location Scope Rules
+- If user asks by country with no explicit scope, apply location filter on both:
+  - `discharge_port` OR `final_destination`
+- If user explicitly says `dp`, filter only `discharge_port`.
+- If user explicitly says `fd`, filter only `final_destination`.
+- Common alias expansions:
+  - America/USA/US/United States:
+    - `%usa%`, `%us%`, `%united states%`, `%(us%`
+  - China/Chaina/CN:
+    - `%china%`, `%cn%`, `%(cn%`
+  - Europe:
+    - `%europe%` plus common markers `%de%`, `%fr%`, `%nl%`, `%be%`, `%es%`, `%it%`, `%gb%`
 
-### Scenario A: Delayed Shipments (Discharge Port)
-**User Query:** "How many shipments are delayed?" (or "Show delayed shipments")
-**Logic:**
-- Filter: `dp_delayed_dur > 0`
-- Date Column: `best_eta_dp_date` (Format: '%d-%b-%Y')
-- Display Protocol: Show container, discharge_port, best_eta_dp_date, and delay days.
+## 1. Reusable SQL Fragments (Concrete)
 
-**DuckDB SQL:**
-```sql
-SELECT
-    container_number,
-    discharge_port,
-    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
-    dp_delayed_dur,
-    -- shipment_status
-FROM df
-WHERE dp_delayed_dur > 0
-ORDER BY best_eta_dp_date DESC;
+```txt
+-- Date formatting helper pattern:
+-- strftime(CAST(col_name AS DATE), '%d-%b-%Y')
+
+-- Global sort pattern:
+ORDER BY COALESCE(
+  CAST(best_eta_dp_date AS DATE),
+  CAST(ata_dp_date AS DATE),
+  CAST(eta_dp_date AS DATE),
+  CAST(best_eta_fd_date AS DATE),
+  CAST(eta_fd_date AS DATE)
+) DESC NULLS LAST
 ```
 
-### Scenario B: Final Destination (FD) Delays
-**User Query:** "Show me delayed FD shipments" (or "Check FD delays")
-**Logic:**
-- Filter: `fd_delayed_dur > 0`
-- Date Column: `eta_fd_date` or `best_eta_fd_date`
-- Display Protocol: Show container, FD, FD date, and FD delay days.
+## 2. Scenario SQL Templates
 
-**DuckDB SQL:**
+### Scenario A: Delayed Shipments at DP
+
 ```sql
 SELECT
-    container_number,
-    final_destination,
-    strftime(best_eta_fd_date, '%d-%b-%Y') AS best_eta_fd_date,
-    fd_delayed_dur,
-    -- shipment_status
-FROM df
-WHERE fd_delayed_dur > 0
-ORDER BY best_eta_fd_date DESC;
-```
-
-### Scenario C: Hot / Priority Shipments
-**User Query:** "List hot containers" (or "Show priority shipments")
-**Logic:**
-- Filter: `hot_container_flag == True`
-- Columns: `container_number`,`po_numbers`, `hot_container_flag`, `shipment_status`
-
-**DuckDB SQL:**
-```sql
-SELECT
-    container_number,
-    po_numbers,
-    hot_container_flag,
-    shipment_status,
-    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date
-FROM df
-WHERE hot_container_flag = TRUE
-ORDER BY best_eta_dp_date DESC NULLS LAST;
-```
-
-### Scenario D: Delivered Shipments to Consignee (Final Destination)
-**User Query:** "Show delivered shipments to consignee" (or "Delivered to consignee")
-**Logic:**
-<!-- - DP Reached: `best_eta_dp_date` is not null **and** `< today`.
-- Delivered: `delivery_to_consignee_date` **or** `empty_container_return_date` is not null.
-- Not Delivered: If **both** delivery dates are null, then it is **not** delivered (even if DP reached). -->
-- DP Reached: `ata_dp_date` is not null.
-- Delivered: `delivery_to_consignee_date` **or** `empty_container_return_date` is not null.
-- Not Delivered: If **both** delivery dates are null, then it is **not** delivered (even if DP reached).
-- Display Protocol: Show container, PO, DP location, DP date, final_destination, delivery/return dates, and status.
-
-**DuckDB SQL:**
-```sql
-SELECT
-    container_number,
-    po_numbers,
-    discharge_port,
-    strftime(ata_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
-    final_destination,
-    strftime(delivery_to_consignee_date, '%d-%b-%Y') AS delivery_to_consignee_date,
-    strftime(empty_container_return_date, '%d-%b-%Y') AS empty_container_return_date,
-    shipment_status
+  container_number,
+  discharge_port,
+  strftime(CAST(best_eta_dp_date AS DATE), '%d-%b-%Y') AS best_eta_dp_date,
+  dp_delayed_dur
 FROM df
 WHERE ata_dp_date IS NOT NULL
---   AND best_eta_dp_date < CURRENT_DATE
-  AND (
-      delivery_to_consignee_date IS NOT NULL
-      OR empty_container_return_date IS NOT NULL
-  )
-ORDER BY ata_dp_date DESC;
+  AND dp_delayed_dur > 0
+ORDER BY CAST(best_eta_dp_date AS DATE) DESC NULLS LAST;
 ```
 
-### Scenario E: Next 5-Day PO/Container Schedule (Nashville Example)
-**User Query:** "Next 5 day container schedule for Nashville" (or "shipments coming in next 10 days at Savannah")
-**Logic:**
-- Arrival window based on `best_eta_dp_date`
-- Filter: `discharge_port` contains the city AND `ata_dp_date` NULL
-- Display Protocol: Show container, PO, arrival date, load port, discharge port.
+### Scenario A-Early: Early Arrivals at DP
 
-**DuckDB SQL:**
 ```sql
 SELECT
-    container_number,
-    po_numbers,
-    load_port,
-    discharge_port,
-    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date
+  container_number,
+  discharge_port,
+  strftime(CAST(best_eta_dp_date AS DATE), '%d-%b-%Y') AS best_eta_dp_date,
+  dp_delayed_dur AS early_days
+FROM df
+WHERE ata_dp_date IS NOT NULL
+  AND dp_delayed_dur < 0
+ORDER BY CAST(best_eta_dp_date AS DATE) DESC NULLS LAST;
+```
+
+### Scenario B: Delayed Shipments at FD
+
+```sql
+SELECT
+  container_number,
+  final_destination,
+  strftime(CAST(best_eta_fd_date AS DATE), '%d-%b-%Y') AS best_eta_fd_date,
+  fd_delayed_dur
+FROM df
+WHERE fd_delayed_dur > 0
+ORDER BY CAST(best_eta_fd_date AS DATE) DESC NULLS LAST;
+```
+
+### Scenario B-Early: Early Arrivals at FD
+
+```sql
+SELECT
+  container_number,
+  final_destination,
+  strftime(CAST(best_eta_fd_date AS DATE), '%d-%b-%Y') AS best_eta_fd_date,
+  fd_delayed_dur AS early_days
+FROM df
+WHERE fd_delayed_dur < 0
+ORDER BY CAST(best_eta_fd_date AS DATE) DESC NULLS LAST;
+```
+
+### Scenario C: Hot or Priority Shipments
+
+```sql
+SELECT
+  container_number,
+  po_numbers,
+  hot_container_flag,
+  shipment_status,
+  strftime(CAST(best_eta_dp_date AS DATE), '%d-%b-%Y') AS best_eta_dp_date
+FROM df
+WHERE hot_container_flag = TRUE
+ORDER BY CAST(best_eta_dp_date AS DATE) DESC NULLS LAST;
+```
+
+### Scenario D: Delivered Shipments to Consignee
+
+```sql
+SELECT
+  container_number,
+  po_numbers,
+  discharge_port,
+  strftime(CAST(ata_dp_date AS DATE), '%d-%b-%Y') AS ata_dp_date,
+  final_destination,
+  strftime(CAST(delivery_to_consignee_date AS DATE), '%d-%b-%Y') AS delivery_to_consignee_date,
+  strftime(CAST(empty_container_return_date AS DATE), '%d-%b-%Y') AS empty_container_return_date,
+  shipment_status
+FROM df
+WHERE ata_dp_date IS NOT NULL
+  AND (
+    delivery_to_consignee_date IS NOT NULL
+    OR empty_container_return_date IS NOT NULL
+  )
+ORDER BY CAST(ata_dp_date AS DATE) DESC NULLS LAST;
+```
+
+### Scenario E: Next N-Day Incoming Schedule at DP
+
+Replace `'nashville'` and `5` with extracted user parameters.
+
+```sql
+SELECT
+  container_number,
+  po_numbers,
+  load_port,
+  discharge_port,
+  strftime(CAST(best_eta_dp_date AS DATE), '%d-%b-%Y') AS best_eta_dp_date
 FROM df
 WHERE discharge_port ILIKE '%nashville%'
-  AND best_eta_dp_date >= CURRENT_DATE
-  AND best_eta_dp_date <= CURRENT_DATE + INTERVAL 5 DAY
-ORDER BY best_eta_dp_date DESC;
+  AND ata_dp_date IS NULL
+  AND CAST(best_eta_dp_date AS DATE) BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL 5 DAY
+ORDER BY CAST(best_eta_dp_date AS DATE) DESC NULLS LAST;
 ```
 
-### Scenario F: Shipment Not Yet Arrived At DP (Missed ETA / Overdue)
-**User Query:** "Which shipments failed to reach DP at Nashville?" (or "not yet arrived at DP in Nashville")
-**Interpretation Rules:**
-- "Not yet arrived at DP": `ata_dp_date` is null.
-- "Failed/missed ETA at DP": `ata_dp_date` is null **and** `best_eta_dp_date <= today`.
-**Logic:**
-- Filter discharge port by location (e.g., Nashville).
-- Keep only records where DP actual arrival is missing.
-- For failed/missed ETA, keep only overdue expected arrivals.
+### Scenario F: Missed ETA or Not Yet Arrived at DP
 
-**DuckDB SQL:**
 ```sql
 SELECT
-    container_number,
-    po_numbers,
-    load_port,
-    discharge_port,
-    strftime(best_eta_dp_date, '%d-%b-%Y') AS best_eta_dp_date,
-    shipment_status
+  container_number,
+  po_numbers,
+  load_port,
+  discharge_port,
+  strftime(CAST(best_eta_dp_date AS DATE), '%d-%b-%Y') AS best_eta_dp_date,
+  shipment_status
 FROM df
 WHERE discharge_port ILIKE '%nashville%'
   AND ata_dp_date IS NULL
   AND best_eta_dp_date IS NOT NULL
-  AND best_eta_dp_date <= CURRENT_DATE
-ORDER BY best_eta_dp_date DESC;
+  AND CAST(best_eta_dp_date AS DATE) <= CURRENT_DATE
+ORDER BY CAST(best_eta_dp_date AS DATE) DESC NULLS LAST;
 ```
 
-### Scenario G: Shipment Missed IN-DC: includes delivered-late and overdue-not-delivered (DELIVERED But Missed IN-DC / MISSED PLANNED DELIVERY)
-**User Query:** "Which shipments failed planned delivery?" (or "not arrived at FD within IN-DC Date")
-**Interpretation Rules:**
-- "Delivered at FD": `delivery_to_consignee_date` not null **OR** `empty_container_return_date` not null.
-- "Failed/missed IN-DC DATE": `in-dc_date` not null **and** `in-dc_date <= delivery_to_consignee_date` **OR** `in-dc_date <= empty_container_return_date` .
-**Logic:**
-- Keep only records where in_dc_date is not null
-- Shipment has any FD delivery event (either consignee delivery OR empty container return)
-- Delivered Late: The actual event occurred on or after the IN‑DC date 
-- No FD delivery event yet and IN‑DC date is already passed (overdue)
-**DuckDB SQL:**
+### Scenario G: Missed IN-DC (Late or Overdue)
+
+Default behavior below treats same-day as aligned (strict `<` for missed).
+
 ```sql
 SELECT
-    container_number,
-    po_numbers,
-    load_port,
-    final_destination,
-    strftime("in-dc_date", '%d-%b-%Y') AS in_dc_date,
-    strftime(delivery_to_consignee_date, '%d-%b-%Y') AS delivered_date,
-    strftime(empty_container_return_date, '%d-%b-%Y') AS container_returned_date,
-    CASE
-	WHEN delivery_to_consignee_date IS NULL AND empty_container_return_date IS NULL AND "in-dc_date" <= CURRENT_DATE
-	THEN 'Overdue - Not Delivered Yet'
-	WHEN "in_dc_date" <= COALESCE(delivery_to_consignee_date, empty_container_return_date)
-	THEN 'Missed Planned Delivery'
-	ELSE 'Aligned As Planned'
-    END AS in_dc_status_bucket
-
+  container_number,
+  po_numbers,
+  load_port,
+  final_destination,
+  strftime(CAST("in-dc_date" AS DATE), '%d-%b-%Y') AS in_dc_date,
+  strftime(CAST(delivery_to_consignee_date AS DATE), '%d-%b-%Y') AS delivered_date,
+  strftime(CAST(empty_container_return_date AS DATE), '%d-%b-%Y') AS container_returned_date,
+  CASE
+    WHEN delivery_to_consignee_date IS NULL
+         AND empty_container_return_date IS NULL
+         AND CAST("in-dc_date" AS DATE) < CURRENT_DATE
+      THEN 'Overdue - Not Delivered Yet'
+    WHEN CAST("in-dc_date" AS DATE) < COALESCE(
+      CAST(delivery_to_consignee_date AS DATE),
+      CAST(empty_container_return_date AS DATE)
+    )
+      THEN 'Missed Planned Delivery'
+    ELSE 'Aligned As Planned'
+  END AS in_dc_status_bucket
 FROM df
-WHERE "in-dc_date" IS NOT NULL
-   AND ( 
-		-- overdue and not delivered
-		(
-		delivery_to_consignee_date IS NULL AND empty_container_return_date IS NULL AND "in-dc_date" <= CURRENT_DATE
-		)
-  	OR 
-		 -- Delivered late by calculating actual available date
-		(
-            	(delivery_to_consignee_date IS NOT NULL OR empty_container_return_date IS NOT NULL)
-            	AND "in-dc_date" <= COALESCE(delivery_to_consignee_date, empty_container_return_date)
-        	)
-
-	)
-
-ORDER BY "in-dc_date" ASC;
+WHERE CAST("in-dc_date" AS DATE) IS NOT NULL
+  AND (
+    (
+      delivery_to_consignee_date IS NULL
+      AND empty_container_return_date IS NULL
+      AND CAST("in-dc_date" AS DATE) < CURRENT_DATE
+    )
+    OR
+    (
+      (delivery_to_consignee_date IS NOT NULL OR empty_container_return_date IS NOT NULL)
+      AND CAST("in-dc_date" AS DATE) < COALESCE(
+        CAST(delivery_to_consignee_date AS DATE),
+        CAST(empty_container_return_date AS DATE)
+      )
+    )
+  )
+ORDER BY CAST("in-dc_date" AS DATE) ASC NULLS LAST;
 ```
 
+## 3. Deterministic Intent Map
+
+```txt
+INTENT_MAP = {
+  ["delayed", "late", "dp delay", "delay at dp"]:          SCENARIO_A_DELAY,
+  ["early at dp", "arrived early", "dp early"]:            SCENARIO_A_EARLY,
+  ["fd delay", "delayed fd", "fd late"]:                   SCENARIO_B_DELAY,
+  ["fd early", "early at fd"]:                             SCENARIO_B_EARLY,
+  ["hot", "priority", "expedite"]:                         SCENARIO_C_HOT,
+  ["delivered", "delivered to consignee", "received"]:     SCENARIO_D_DELIVERED,
+  ["next", "upcoming", "schedule", "in next"]:             SCENARIO_E_NEXT_N,
+  ["not arrived dp", "missed eta", "overdue dp"]:          SCENARIO_F_MISSED_DP,
+  ["missed in-dc", "failed planned delivery",
+   "not arrived fd within in-dc"]:                         SCENARIO_G_INDC
+}
+```
+
+## 4. Final Behavior Checklist
+
+- Always return valid DuckDB SQL (no unresolved macro syntax).
+- Use only columns that exist in `df`.
+- Apply default caps only when user did not provide explicit window/threshold.
+- Always sort on raw date columns, then format dates for display.
+- If no rows are returned, state it clearly and mention any fallback used.
 

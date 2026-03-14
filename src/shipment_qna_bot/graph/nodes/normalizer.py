@@ -463,7 +463,7 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
 
         # Praise/Feedback Guardrail (Issue A)
         praise_patterns = [
-            r"^(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)[\s\d!.]*$",
+            r"(thank you|thanks|great|good job|well done|nice|cool|awesome|perfect|exactly|no corrections?|you are (doing )?good|keep it up)",
             r"^(no|nothing|that's it|all set|i'm good|no thanks)[\s.]*$",
         ]
         if any(re.search(p, question.lower()) for p in praise_patterns):

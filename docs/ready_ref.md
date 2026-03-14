@@ -127,6 +127,7 @@ FROM df
 WHERE hot_container_flag = TRUE
 ORDER BY CAST(best_eta_dp_date AS DATE) DESC NULLS LAST;
 ```
+<<<<<<< HEAD
 
 ### Scenario D: Delivered Shipments to Consignee
 
@@ -255,3 +256,53 @@ INTENT_MAP = {
 - Always sort on raw date columns, then format dates for display.
 - If no rows are returned, state it clearly and mention any fallback used.
 
+=======
+### Scenario G: Geographical Filtering (USA)
+**User Query:** "Shipments coming/arrived in USA"
+**Logic:**
+- There is no 'Country' column. Use heuristics on `discharge_port` or `final_destination`.
+- USA ports often contain `(US...)` LOCODEs or state abbreviations like `NY`, `CA`, `TX`.
+- Filter: `discharge_port ILIKE '%(US%)' OR final_destination ILIKE '%(US%)'`
+
+**DuckDB SQL:**
+```sql
+SELECT container_number, discharge_port, final_destination, shipment_status 
+FROM df 
+WHERE discharge_port ILIKE '%(US%)' OR final_destination ILIKE '%(US%)'
+ORDER BY best_eta_dp_date DESC;
+```
+
+### Scenario H: Arrived at DP but Not Delivered to FD
+**User Query:** "Arrived in DP but not delivered in FD"
+**Logic:**
+- "Arrived in DP": `ata_dp_date IS NOT NULL` (or `derived_ata_dp_date IS NOT NULL`).
+- "Not Delivered": `delivery_to_consignee_date IS NULL` AND `empty_container_return_date IS NULL`.
+- Filter: `ata_dp_date IS NOT NULL AND delivery_to_consignee_date IS NULL`
+
+**DuckDB SQL:**
+```sql
+SELECT container_number, discharge_port, strftime(ata_dp_date, '%d-%b-%Y') as arrival_dp, final_destination, shipment_status
+FROM df 
+WHERE ata_dp_date IS NOT NULL AND delivery_to_consignee_date IS NULL
+ORDER BY ata_dp_date DESC;
+```
+
+### Scenario I: Plan Deviation (In-DC vs Delivered)
+**User Query:** "shipments that deviated my plan (in-dc date vs delivered date mismatch)"
+**Logic:**
+- Compare `in-dc_date` (Planned/In-DC) with `delivery_to_consignee_date` (Actual).
+- "Mismatched" or "Deviated": `in-dc_date != delivery_to_consignee_date` or `delivery_to_consignee_date > in-dc_date`.
+- Note: Both must be NOT NULL to compare.
+
+**DuckDB SQL:**
+```sql
+SELECT container_number, 
+       strftime("in-dc_date", '%d-%b-%Y') as planned_dc, 
+       strftime(delivery_to_consignee_date, '%d-%b-%Y') as actual_delivered,
+       date_diff('day', "in-dc_date", delivery_to_consignee_date) as deviation_days
+FROM df 
+WHERE "in-dc_date" IS NOT NULL AND delivery_to_consignee_date IS NOT NULL 
+      AND "in-dc_date" != delivery_to_consignee_date
+ORDER BY deviation_days DESC;
+```
+>>>>>>> old_main_dec25

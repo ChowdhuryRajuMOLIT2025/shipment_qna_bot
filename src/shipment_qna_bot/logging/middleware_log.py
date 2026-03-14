@@ -49,8 +49,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             duration_ms = (time.perf_counter() - start) * 1000
             logger.error(
-                f"Unhandled exception processing request: {request.method} {request.url.path} - {str(e)}",
-                f"after {duration_ms: .1f}ms",
+                f"Unhandled exception processing request: {request.method} {request.url.path} - {str(e)} after {duration_ms:.1f}ms",
                 extra={"step": "API:ERROR"},
                 exc_info=True,
             )

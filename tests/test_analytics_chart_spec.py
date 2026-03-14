@@ -13,6 +13,10 @@ class _StubBlobManager:
     def get_local_path(self):
         return self._parquet_path
 
+    def get_local_path(self):
+        # We need a dummy path for duckdb to execute against a view. The actual test engine mock ignores it anyway.
+        return "dummy.parquet"
+
 
 class _StubChatTool:
     def __init__(self, sql: str):
@@ -29,6 +33,29 @@ class _StubChatTool:
         }
 
 
+<<<<<<< HEAD
+=======
+class _StubCon:
+    def __init__(self):
+        self.df = lambda: pd.DataFrame(
+            {"discharge_port": ["LOS ANGELES"], "count": [12]}
+        )
+
+    def sql(self, *args, **kwargs):
+        # returns self so `sample_rel.df()` can be called in the analytics code
+        return self
+
+
+class _StubEngine:
+    def __init__(self, exec_result):
+        self._exec_result = exec_result
+        self.con = _StubCon()
+
+    def execute_query(self, parquet_path, sql, consignee_codes):
+        return dict(self._exec_result)
+
+
+>>>>>>> old_main_dec25
 def _base_state(question: str):
     return {
         "question_raw": question,
@@ -119,7 +146,11 @@ def test_analytics_generates_bar_chart_spec(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+>>>>>>> old_main_dec25
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -153,7 +184,11 @@ def test_analytics_generates_pie_chart_spec(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+>>>>>>> old_main_dec25
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -182,7 +217,11 @@ def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch, tmp
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
+>>>>>>> old_main_dec25
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -208,6 +247,7 @@ def test_analytics_previous_result_scope_filters_view(monkeypatch, tmp_path):
         ),
     )
     monkeypatch.setattr(
+<<<<<<< HEAD
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
     )
 
@@ -252,6 +292,9 @@ def test_analytics_empty_result_set_returns_clear_message(monkeypatch, tmp_path)
     )
     monkeypatch.setattr(
         analytics_module, "_get_duckdb_engine", lambda: DuckDBAnalyticsEngine()
+=======
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result_dict())
+>>>>>>> old_main_dec25
     )
 
     new_state = analytics_module.analytics_planner_node(

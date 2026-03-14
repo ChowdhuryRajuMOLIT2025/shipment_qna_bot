@@ -15,7 +15,11 @@ from shipment_qna_bot.tools.analytics_metadata import (
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
 from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.duckdb_engine import DuckDBAnalyticsEngine
+<<<<<<< HEAD
 from shipment_qna_bot.tools.ready_ref import load_ready_ref
+=======
+from shipment_qna_bot.utils.config import is_chart_enabled
+>>>>>>> old_main_dec25
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 # Load environment overrides from .env (if present)
@@ -426,6 +430,10 @@ def _wants_chart(question: str) -> bool:
         "by port",
         "top 5",
         "top 10",
+        "top five",
+        "top ten",
+        "summary of",
+        "comparison",
     ]
     return any(term in lowered for term in chart_terms)
 
@@ -528,6 +536,8 @@ def _build_table_spec_from_exec(
 def _build_chart_spec_from_table(
     question: str, table_spec: Optional[Dict[str, Any]]
 ) -> Optional[Dict[str, Any]]:
+    if not is_chart_enabled():
+        return None
     if not _wants_chart(question):
         return None
     if not isinstance(table_spec, dict):
@@ -911,7 +921,7 @@ ORDER BY best_eta_dp_date DESC;
             )
             return state
 
-        # if not generated_code:
+        # 4. Execute Code
         if not generated_sql:
             state.setdefault("errors", []).append("LLM produced no code.")
             state["answer_text"] = (

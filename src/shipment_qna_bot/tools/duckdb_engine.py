@@ -3,7 +3,6 @@
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
 
-import duckdb
 import numpy as np
 import pandas as pd
 
@@ -17,6 +16,7 @@ class DuckDBAnalyticsEngine:
     """
 
     def __init__(self, db_path: str = ":memory:"):
+        import duckdb
         self.db_path = db_path
         self.con = duckdb.connect(self.db_path)
 
@@ -155,11 +155,29 @@ class DuckDBAnalyticsEngine:
         logger.info(f"QRY:\n{sql}")
 
         try:
+<<<<<<< HEAD
             self.prepare_view(parquet_path, consignee_codes, selector=selector)
+=======
+            import duckdb
 
-            rel = self.con.sql(sql)
+            # Create an isolated connection for this query execution solely.
+            con = duckdb.connect(self.db_path)
+
+            safe_codes = [c.replace("'", "''") for c in consignee_codes]
+            codes_str = ", ".join([f"'{c}'" for c in safe_codes])
+
+            rls_query = f"""
+                CREATE OR REPLACE VIEW df AS 
+                SELECT * FROM read_parquet('{parquet_path}')
+                WHERE list_has_any(consignee_codes, [{codes_str}]::VARCHAR[])
+            """
+            con.execute(rls_query)
+>>>>>>> old_main_dec25
+
+            rel = con.sql(sql)
 
             if rel is None:  # type: ignore
+                con.close()
                 return {
                     "success": True,
                     "output": "Query executed successfully (no result set).",
@@ -183,9 +201,10 @@ class DuckDBAnalyticsEngine:
             )
 
             # Calculate underlying row count if not already known
-            underlying_count = self.con.sql("SELECT count(*) FROM df").fetchone()[0]  # type: ignore
+            underlying_count = con.sql("SELECT count(*) FROM df").fetchone()[0]  # type: ignore
 
             if underlying_count == 0 and not is_scalar_count:
+                con.close()
                 return {
                     "success": True,
                     "output": "",
@@ -219,6 +238,9 @@ class DuckDBAnalyticsEngine:
                 "result_rows": result_rows,
                 "result_value": result_rows,
             }
+
+            con.close()
+            return result
 
         except Exception as e:
             logger.error(f"QRY execution failed: {e}")

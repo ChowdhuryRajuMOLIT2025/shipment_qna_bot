@@ -232,7 +232,10 @@ ANALYTICS_METADATA = {
         "type": "string",
     },
     "cargo_ready_date": {"desc": "Definition for cargo ready date.", "type": "string"},
-    "in-dc_date": {"desc": "Definition for in-dc date.", "type": "datetime"},
+    "in-dc_date": {
+        "desc": "Planned or expected date the shipment should be at the Distribution Center (DC). Used to compare against actual delivery to check for plan deviations.",
+        "type": "datetime",
+    },
     "cargo_weight_kg": {
         "desc": "Total weight of the cargo in kilograms.",
         "type": "numeric",

@@ -8,6 +8,7 @@ from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
+from shipment_qna_bot.utils.config import is_chart_enabled, is_weather_enabled
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
@@ -161,6 +162,14 @@ def intent_node(state: GraphState) -> GraphState:
             lowered = text.lower()
             greeting_words = {"hi", "hello", "hey", "good morning", "good afternoon"}
             analytics_words = {"chart", "graph", "analytics", "breakdown", "bucket"}
+            weather_words = {
+                "weather",
+                "storm",
+                "temperature",
+                "rain",
+                "forecast",
+                "climate",
+            }
             exit_words = {
                 "bye",
                 "goodbye",
@@ -176,8 +185,14 @@ def intent_node(state: GraphState) -> GraphState:
                 intent = "greeting"
             elif any(_contains_keyword(lowered, w) for w in exit_words):
                 intent = "end"
+<<<<<<< HEAD
             elif any(_contains_keyword(lowered, w) for w in analytics_words):
+=======
+            elif is_chart_enabled() and any(w in lowered for w in analytics_words):
+>>>>>>> old_main_dec25
                 intent = "analytics"
+            elif is_weather_enabled() and any(w in lowered for w in weather_words):
+                intent = "retrieval"  # Weather is usually an enrichment for retrieval
 
             sub_intents = [intent]
             if "eta" in lowered:
@@ -186,6 +201,8 @@ def intent_node(state: GraphState) -> GraphState:
                 sub_intents.append("delay")
             if "status" in lowered:
                 sub_intents.append("status")
+            if is_weather_enabled() and any(w in lowered for w in weather_words):
+                sub_intents.append("weather")
 
             # Deduplicate while preserving order
             seen = set()
@@ -220,17 +237,26 @@ def intent_node(state: GraphState) -> GraphState:
 
         import json
 
+        analytics_instruction = ""
+        if is_chart_enabled():
+            analytics_instruction = "   - 'analytics': Use for general aggregating queries, summaries, counts, or listing distinct values.\n"
+
+        weather_instruction = ""
+        if is_weather_enabled():
+            weather_instruction = "   - Add 'weather' to the list if the user asks about weather, storm, temperature, or environmental impact.\n"
+
         system_prompt = (
             "You are an intent classifier for a Logistics Shipment Q&A Bot.\n"
             "Analyze the user's input and extract:\n"
             "1. Primary Intent: One of ['retrieval', 'analytics', 'greeting', 'company_overview', 'clarification', 'end'].\n"
-            "   - 'analytics': Use for general aggregating queries, summaries, counts, or listing distinct values. Examples: 'How many...', 'Total weight...', 'Which carriers...', 'List all suppliers', 'Show delay statistics', 'Check FD dates'.\n"
-            "   - 'retrieval': Use for specific single-shipment lookup where an ID is provided (Container, PO, Booking, OBL) or asking for status of a specific subset. If the user asks for a 'list' or 'count' without specific IDs, prefer 'analytics'.\n"
-            "   - 'clarification': Use IF AND ONLY IF the user's query is too vague, ambiguous, or lacks necessary context to decide between analytics/retrieval or to perform the action. Examples: 'Show me dates' (Which dates?), 'List shipments' (All of them? Too generic).\n"
+            f"{analytics_instruction}"
+            "   - 'retrieval': Use for specific single-shipment lookup or asking about status/weather impact for specific shipments.\n"
+            "   - 'clarification': Use IF AND ONLY IF the user's query is too vague, ambiguous, or lacks necessary context.\n"
             "   - 'greeting': Use for 'hi', 'hello', etc.\n"
             "   - 'company_overview': Use for questions about the company itself.\n"
-            "   - 'end': Use ONLY for explicit farewells or requests to close the session (e.g., 'bye', 'goodbye', 'end chat', 'quit'). Do NOT use for simple 'thank you' or praise if the user might have follow-up questions.\n"
-            "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
+            "   - 'end': Use ONLY for explicit farewells (like 'bye', 'goodbye', 'close session'). DO NOT use for general praise or 'thank you'.\n"
+            "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'weather', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
+            f"{weather_instruction}"
             "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"
             "Output JSON ONLY:\n"
             "{\n"

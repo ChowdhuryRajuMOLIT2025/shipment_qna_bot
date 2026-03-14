@@ -4,6 +4,10 @@ from shipment_qna_bot.graph.nodes.judge import judge_node
 from shipment_qna_bot.graph.nodes.normalizer import normalize_node
 from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
     should_handle_overview
+<<<<<<< HEAD
+=======
+from shipment_qna_bot.tools.duckdb_engine import DuckDBAnalyticsEngine
+>>>>>>> old_main_dec25
 
 
 def _write_overview(tmp_path):
@@ -155,3 +159,35 @@ def test_judge_retries_analytics_failure_without_hits():
     assert new_state["is_satisfied"] is False
     assert new_state["retry_count"] == 1
     assert "retry" in (new_state.get("reflection_feedback") or "").lower()
+<<<<<<< HEAD
+=======
+
+
+def test_duckdb_preflight_rejects_disallowed_import():
+    engine = DuckDBAnalyticsEngine()
+
+    result = engine.execute_query(
+        "dummy.parquet",
+        "import matplotlib.pyplot as plt\nresult = df['x'].sum()",
+        ["CODE1"],
+    )
+
+    assert result["success"] is False
+
+
+def test_duckdb_engine_coerces_string_ops(tmp_path):
+    df = pd.DataFrame(
+        {
+            "po_numbers": ["5303012825", "5303012826"],
+            "consignee_codes": [["CODE1"], ["CODE1"]],
+        }
+    )
+    df.to_parquet(tmp_path / "dummy.parquet")
+    engine = DuckDBAnalyticsEngine()
+
+    code = "SELECT po_numbers FROM df WHERE po_numbers LIKE '%530301%'"
+    result = engine.execute_query(str(tmp_path / "dummy.parquet"), code, ["CODE1"])
+
+    assert result["success"] is True
+    assert "5303012825" in str(result.get("result"))
+>>>>>>> old_main_dec25

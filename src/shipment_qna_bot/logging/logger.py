@@ -7,7 +7,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-# Context variables for request tracing
+# I'm using context variables to trace request IDs and scopes across the app.
 trace_id_ctx = contextvars.ContextVar("trace_id", default=None)
 conversation_id_ctx = contextvars.ContextVar("conversation_id", default=None)
 consignee_scope_ctx = contextvars.ContextVar("consignee_scope", default=None)
@@ -15,7 +15,7 @@ consignee_scope_ctx = contextvars.ContextVar("consignee_scope", default=None)
 
 class JSONFormatter(logging.Formatter):
     """
-    Formatter that outputs JSON strings with context.
+    I format logs as JSON so I can easily include tracing context.
     """
 
     def format(self, record: logging.LogRecord) -> str:
@@ -29,7 +29,7 @@ class JSONFormatter(logging.Formatter):
             "consignee_scope": consignee_scope_ctx.get(),
         }
 
-        # Add extra fields from record if available
+        # I include any extra data if I find it.
         if hasattr(record, "extra_data"):
             log_record.update(record.extra_data)
 
@@ -41,11 +41,11 @@ class JSONFormatter(logging.Formatter):
 
 def setup_logger(name: str = "shipment_qna_bot", level: str = "INFO") -> logging.Logger:
     """
-    Configures and returns a logger with JSON formatting.
+    I set up the logger here with my JSON formatter and file rotation.
     """
     logger = logging.getLogger(name)
 
-    # clear existing handlers to avoid duplicates
+    # I clear old handlers so I don't get double logs.
     if logger.handlers:
         logger.handlers.clear()
 
@@ -55,7 +55,7 @@ def setup_logger(name: str = "shipment_qna_bot", level: str = "INFO") -> logging
     handler.setFormatter(JSONFormatter())
     logger.addHandler(handler)
 
-    # Add file handler for app.log
+    # I'll add a file handler for app.log
     log_dir = Path(__file__).parent.parent / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "app.log"
@@ -66,7 +66,7 @@ def setup_logger(name: str = "shipment_qna_bot", level: str = "INFO") -> logging
     file_handler.setFormatter(JSONFormatter())
     logger.addHandler(file_handler)
 
-    # Prevent propagation to root logger to avoid double logging if root is configured
+    # I stop the logs from bubbling up to the root to avoid clutter.
     logger.propagate = False
 
     return logger
@@ -83,14 +83,8 @@ def set_log_context(
     trace_id: Optional[str] = None,
 ) -> None:
     """
-    Updates the context variables for logging.
+    I update the log context variables here.
     """
-    if conversation_id:
-        conversation_id_ctx.set(conversation_id)
-    if consignee_codes:
-        consignee_scope_ctx.set(consignee_codes)
-    if trace_id:
-        trace_id_ctx.set(trace_id)
-
-    # Note: intent is passed but not currently stored in a dedicated context var
-    # We could add an intent_ctx if needed, or rely on extra_data in node logs.
+    conversation_id_ctx.set(conversation_id)
+    consignee_scope_ctx.set(consignee_codes)
+    trace_id_ctx.set(trace_id)

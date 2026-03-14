@@ -94,11 +94,13 @@ async def chat_endpoint(payload: ChatRequest, request: Request) -> ChatAnswer:
     # In a production implementation, this would involve NLP processing, database queries, etc.
 
     import time
+    from fastapi.concurrency import run_in_threadpool
 
     start_time = time.time()
 
-    # run graph
-    result = run_graph(
+    # run graph in a separate thread so concurrent users don't block the FastAPI event loop
+    result = await run_in_threadpool(
+        run_graph,
         {
             "conversation_id": conversation_id,
             "question_raw": payload.question,

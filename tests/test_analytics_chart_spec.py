@@ -10,6 +10,10 @@ class _StubBlobManager:
     def load_filtered_data(self, consignee_codes):
         return self._df.copy()
 
+    def get_local_path(self):
+        # We need a dummy path for duckdb to execute against a view. The actual test engine mock ignores it anyway.
+        return "dummy.parquet"
+
 
 class _StubChatTool:
     def __init__(self, code: str):
@@ -26,9 +30,18 @@ class _StubChatTool:
         }
 
 
+class _StubCon:
+    def __init__(self):
+        self.df = lambda: pd.DataFrame({"discharge_port": ["LOS ANGELES"], "count": [12]})
+    
+    def sql(self, *args, **kwargs):
+        # returns self so `sample_rel.df()` can be called in the analytics code
+        return self
+
 class _StubEngine:
     def __init__(self, exec_result):
         self._exec_result = exec_result
+        self.con = _StubCon()
 
     def execute_query(self, parquet_path, sql, consignee_codes):
         return dict(self._exec_result)
@@ -127,7 +140,7 @@ def test_analytics_generates_pie_chart_spec(monkeypatch):
         analytics_module, "_get_chat", lambda: _StubChatTool("result = df")
     )
     monkeypatch.setattr(
-        analytics_module, "_get_pandas_engine", lambda: _StubEngine(_exec_result())
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
     )
 
     new_state = analytics_module.analytics_planner_node(
@@ -153,7 +166,7 @@ def test_analytics_keeps_table_without_chart_when_not_requested(monkeypatch):
         analytics_module, "_get_chat", lambda: _StubChatTool("result = df")
     )
     monkeypatch.setattr(
-        analytics_module, "_get_pandas_engine", lambda: _StubEngine(_exec_result())
+        analytics_module, "_get_duckdb_engine", lambda: _StubEngine(_exec_result())
     )
 
     new_state = analytics_module.analytics_planner_node(

@@ -19,6 +19,7 @@ class DuckDBAnalyticsEngine:
 
     def __init__(self, db_path: str = ":memory:"):
         import duckdb
+
         self.db_path = db_path
         self.con = duckdb.connect(self.db_path)
 

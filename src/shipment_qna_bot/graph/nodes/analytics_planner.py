@@ -1,9 +1,11 @@
 # src/shipment_qna_bot/graph/nodes/analytics_planner.py
 
 import json  # type: ignore
+import os
 import re
 from typing import Any, Dict, List, Optional  # type: ignore
 
+from dotenv import find_dotenv, load_dotenv
 from langchain_core.messages import AIMessage
 
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
@@ -15,6 +17,16 @@ from shipment_qna_bot.tools.blob_manager import BlobAnalyticsManager
 from shipment_qna_bot.tools.duckdb_engine import DuckDBAnalyticsEngine
 from shipment_qna_bot.tools.ready_ref import load_ready_ref
 from shipment_qna_bot.utils.runtime import is_test_mode
+
+# Load environment overrides from .env (if present)
+load_dotenv(find_dotenv(), override=True)
+
+# Configurable analytics defaults. Non-positive values disable the default behavior.
+DEFAULT_FUTURE_WINDOW_DAYS = int(os.getenv("ANALYTICS_DEFAULT_FUTURE_WINDOW_DAYS", "0"))
+DEFAULT_PAST_WINDOW_DAYS = int(os.getenv("ANALYTICS_DEFAULT_PAST_WINDOW_DAYS", "0"))
+DEFAULT_DELAY_THRESHOLD_DAYS = int(
+    os.getenv("ANALYTICS_DEFAULT_DELAY_THRESHOLD_DAYS", "0")
+)
 
 _CHAT_TOOL: Optional[AzureOpenAIChatTool] = None
 _BLOB_MGR: Optional[BlobAnalyticsManager] = None
@@ -221,6 +233,9 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
         )
         if _has_existing_column_constraint(sql, date_col):
             return sql, None
+        # honor configured default; skip applying if non-positive (disabled)
+        if DEFAULT_FUTURE_WINDOW_DAYS <= 0:
+            return sql, None
         if fd_context and not dp_context:
             if (
                 _has_existing_column_constraint(sql, "delivery_to_consignee_date")
@@ -233,7 +248,7 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
                 "delivery_to_consignee_date IS NULL "
                 "AND empty_container_return_date IS NULL "
                 f"AND {date_col} >= CURRENT_DATE "
-                f"AND {date_col} <= CURRENT_DATE + INTERVAL 30 DAY"
+                f"AND {date_col} <= CURRENT_DATE + INTERVAL {DEFAULT_FUTURE_WINDOW_DAYS} DAY"
             )
         else:
             if _has_existing_column_constraint(
@@ -243,13 +258,11 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
             condition = (
                 "ata_dp_date IS NULL "
                 f"AND {date_col} >= CURRENT_DATE "
-                f"AND {date_col} <= CURRENT_DATE + INTERVAL 30 DAY"
+                f"AND {date_col} <= CURRENT_DATE + INTERVAL {DEFAULT_FUTURE_WINDOW_DAYS} DAY"
             )
         updated_sql, changed = _inject_filter_condition(sql, condition)
         if changed:
-            note = (
-                "Applied default future window: CURRENT_DATE to CURRENT_DATE + 30 days."
-            )
+            note = f"Applied default future window: CURRENT_DATE to CURRENT_DATE + {DEFAULT_FUTURE_WINDOW_DAYS} days."
             return updated_sql, note
         return sql, None
 
@@ -272,12 +285,12 @@ def _apply_default_time_cap(question: str, sql: str) -> tuple[str, Optional[str]
             return sql, None
 
     condition = (
-        f"{date_expr} >= CURRENT_DATE - INTERVAL 30 DAY "
+        f"{date_expr} >= CURRENT_DATE - INTERVAL {DEFAULT_PAST_WINDOW_DAYS} DAY "
         f"AND {date_expr} <= CURRENT_DATE"
     )
     updated_sql, changed = _inject_filter_condition(sql, condition)
     if changed:
-        note = "Applied default past window: CURRENT_DATE - 30 days to CURRENT_DATE."
+        note = f"Applied default past window: CURRENT_DATE - {DEFAULT_PAST_WINDOW_DAYS} days to CURRENT_DATE."
         return updated_sql, note
     return sql, None
 
@@ -300,16 +313,20 @@ def _apply_default_delay_cap(question: str, sql: str) -> tuple[str, Optional[str
     if _has_existing_column_constraint(sql, delay_col):
         return sql, None
 
+    # honor configured default threshold; skip applying if non-positive (disabled)
+    if DEFAULT_DELAY_THRESHOLD_DAYS <= 0:
+        return sql, None
+
     if mentions_delayed and not mentions_early:
-        condition = f"{delay_col} <= 7"
+        condition = f"{delay_col} >= {DEFAULT_DELAY_THRESHOLD_DAYS}"
     elif mentions_early and not mentions_delayed:
-        condition = f"{delay_col} <= -7"
+        condition = f"{delay_col} > -{DEFAULT_DELAY_THRESHOLD_DAYS}"
     else:
-        condition = f"ABS({delay_col}) <= 7"
+        condition = f"ABS({delay_col}) <= {DEFAULT_DELAY_THRESHOLD_DAYS}"
 
     updated_sql, changed = _inject_filter_condition(sql, condition)
     if changed:
-        note = "Applied default delay/early threshold: 7 days."
+        note = f"Applied default delay/early threshold: {DEFAULT_DELAY_THRESHOLD_DAYS} days."
         return updated_sql, note
     return sql, None
 
@@ -986,7 +1003,9 @@ ORDER BY best_eta_dp_date DESC;
                 exec_result.get("result") or exec_result.get("final_answer") or ""
             ).strip()
             if final_answer:
-                state["answer_text"] = f"Here is what I found:\n{final_answer}"
+                state["answer_text"] = (
+                    f"Here is what I found - {len(result_rows)} item:\n{final_answer}"
+                )
             else:
                 state["answer_text"] = "I ran the analytics query successfully."
             if applied_default_caps:

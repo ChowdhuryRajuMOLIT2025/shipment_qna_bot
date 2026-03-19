@@ -398,9 +398,13 @@ def normalize_node(state: GraphState) -> Dict[str, Any]:
             if _mentions_session_scope(raw_q) or _mentions_session_scope(normalized_q):
                 state["analytics_context_mode"] = "session"
                 return
-            state["analytics_scope_candidate"] = _build_analytics_scope_candidate(
+            analytics_scope_candidate = _build_analytics_scope_candidate(
                 raw_q, normalized_q, state
             )
+            if analytics_scope_candidate:
+                state["analytics_context_mode"] = "previous_result"
+                return
+            state["analytics_scope_candidate"] = None
 
         question = (state.get("question_raw") or "").strip()
         question, forced_new_topic = _strip_new_topic_prefix(question)

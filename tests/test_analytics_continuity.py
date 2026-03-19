@@ -103,29 +103,13 @@ def test_graph_preserves_analytics_followup_scope(monkeypatch, tmp_path):
         }
     )
 
-    assert second_turn["intent"] == "clarification"
-    assert "Reply with 1 or 2." in (second_turn.get("answer_text") or "")
-    assert second_turn.get("pending_analytics_scope") is not None
-
-    third_turn = builder_module.run_graph(
-        {
-            "conversation_id": conversation_id,
-            "question_raw": "1",
-            "consignee_codes": ["0000866"],
-            "usage_metadata": {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0,
-            },
-        }
-    )
-
-    assert third_turn["intent"] == "analytics"
+    assert second_turn["intent"] == "analytics"
+    assert second_turn.get("pending_analytics_scope") is None
     assert "Applied previous analytics result scope (3 rows)." in (
-        third_turn.get("notices") or []
+        second_turn.get("notices") or []
     )
-    assert third_turn["table_spec"] is not None
-    assert [row["container_number"] for row in third_turn["table_spec"]["rows"]] == [
+    assert second_turn["table_spec"] is not None
+    assert [row["container_number"] for row in second_turn["table_spec"]["rows"]] == [
         "CONT1",
         "CONT3",
     ]

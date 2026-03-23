@@ -14,15 +14,10 @@ from shipment_qna_bot.logging.logger import logger, set_log_context
 from shipment_qna_bot.tools.azure_ai_search import AzureAISearchTool
 from shipment_qna_bot.tools.azure_openai_embeddings import \
     AzureOpenAIEmbeddingsClient
-# from shipment_qna_bot.tools.news_tool import NewsTool
-# from shipment_qna_bot.tools.weather_tool import WeatherTool
-from shipment_qna_bot.utils.config import is_news_enabled, is_weather_enabled
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _SEARCH: Optional[AzureAISearchTool] = None
 _EMBED: Optional[AzureOpenAIEmbeddingsClient] = None
-_WEATHER: Optional[WeatherTool] = None
-_NEWS: Optional[NewsTool] = None
 
 _FILTER_FIELDS = {
     "container_number",
@@ -141,96 +136,6 @@ def _get_embedder() -> AzureOpenAIEmbeddingsClient:
     if _EMBED is None:
         _EMBED = AzureOpenAIEmbeddingsClient()  # type: ignore
     return _EMBED
-
-
-def _get_weather_tool() -> WeatherTool:
-    global _WEATHER
-    if _WEATHER is None:
-        _WEATHER = WeatherTool()
-    return _WEATHER
-
-
-def _fetch_weather_alerts(hits: list[Dict[str, Any]], state: Dict[str, Any]) -> None:
-    """
-    Fetches weather for unique locations in hits and adds to state['notices'].
-    """
-    if not is_weather_enabled() or "weather" not in (state.get("sub_intents") or []):
-        return
-
-    locations = set()
-    for h in hits[:10]:
-        for field in ["discharge_port", "final_destination", "load_port"]:
-            loc = h.get(field)
-            if loc and isinstance(loc, str) and len(loc) > 2:
-                locations.add(loc.strip().upper())
-
-    if not locations:
-        return
-
-    weather_tool = _get_weather_tool()
-    success_count = 0
-    failure_count = 0
-    for loc in sorted(list(locations))[:6]:
-        res = weather_tool.get_impact_for_location(loc, forecast_days=3)
-        for notice in weather_tool.consume_transport_notices():
-            if notice not in state.setdefault("notices", []):
-                state["notices"].append(notice)
-        if res:
-            msg = (
-                f"Weather Outlook for {res['location']} ({res.get('country', '')}): "
-                f"{res.get('summary', 'No summary available.')}"
-            )
-            state.setdefault("notices", []).append(msg)
-            logger.info(f"Added weather notice for {loc}")
-            success_count += 1
-        else:
-            failure_count += 1
-
-    if failure_count and not success_count:
-        state.setdefault("notices", []).append(
-            "Live weather enrichment could not retrieve data for the matched shipment locations."
-        )
-
-
-def _get_news_tool() -> NewsTool:
-    global _NEWS
-    if _NEWS is None:
-        _NEWS = NewsTool()
-    return _NEWS
-
-
-def _fetch_news_impact(hits: list[Dict[str, Any]], state: Dict[str, Any]) -> None:
-    """
-    Fetches logistics news for unique carriers and ports in hits.
-    """
-    if not is_news_enabled() or "news" not in (state.get("sub_intents") or []):
-        return
-
-    keywords = set()
-    for h in hits[:5]:
-        # Extract meaningful keywords for news search
-        for field in ["discharge_port", "true_carrier_scac_name", "final_carrier_name"]:
-            val = h.get(field)
-            if val and isinstance(val, str) and len(val) > 3:
-                # Clean up carrier names for better search
-                clean_val = re.sub(
-                    r"\b(Inc|Ltd|Corp|Co|Shipping|Line)\b", "", val, flags=re.I
-                ).strip()
-                if clean_val:
-                    keywords.add(clean_val)
-
-    if not keywords:
-        return
-
-    news_tool = _get_news_tool()
-    # Limit to top 3 keywords to avoid too much noise
-    search_terms = sorted(list(keywords))[:3]
-    articles = news_tool.fetch_news(search_terms, limit=3)
-
-    for art in articles:
-        msg = f"News Impact ({art['source']}): {art['title']} - Potential impact on shipments involving {', '.join(search_terms)}."
-        state.setdefault("notices", []).append(msg)
-        logger.info(f"Added news notice from {art['source']}")
 
 
 def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -451,12 +356,6 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 f"Retrieved {len(hits)} hits for query=<{query_text}>",
                 extra={"step": "NODE:Retriever"},
             )
-
-            # Weather Enrichment
-            _fetch_weather_alerts(hits, state)
-
-            # News Impact Enrichment
-            _fetch_news_impact(hits, state)
 
         except Exception as e:
             error_msg = str(e)

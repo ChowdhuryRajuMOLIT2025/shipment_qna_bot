@@ -8,26 +8,10 @@ from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.logging.graph_tracing import log_node_execution
 from shipment_qna_bot.logging.logger import logger
 from shipment_qna_bot.tools.azure_openai_chat import AzureOpenAIChatTool
-from shipment_qna_bot.utils.config import is_chart_enabled, is_weather_enabled
+from shipment_qna_bot.utils.config import is_chart_enabled
 from shipment_qna_bot.utils.runtime import is_test_mode
 
 _chat_tool: AzureOpenAIChatTool | None = None
-
-_WEATHER_TERMS = {
-    "weather",
-    "storm",
-    "temperature",
-    "rain",
-    "forecast",
-    "climate",
-    "wind",
-    "gust",
-    "typhoon",
-    "hurricane",
-    "cyclone",
-    "fog",
-    "thunder",
-}
 
 
 def _get_chat_tool() -> AzureOpenAIChatTool:
@@ -78,11 +62,6 @@ def _contains_keyword(text: str, keyword: str) -> bool:
     if not lowered or not term:
         return False
     return bool(re.search(r"\b" + re.escape(term) + r"\b", lowered))
-
-
-def _contains_weather_terms(text: str) -> bool:
-    lowered = (text or "").lower()
-    return any(term in lowered for term in _WEATHER_TERMS)
 
 
 def intent_node(state: GraphState) -> GraphState:
@@ -202,8 +181,6 @@ def intent_node(state: GraphState) -> GraphState:
                 _contains_keyword(lowered, w) for w in analytics_words
             ):
                 intent = "analytics"
-            elif is_weather_enabled() and _contains_weather_terms(lowered):
-                intent = "retrieval"  # Weather is usually an enrichment for retrieval
 
             sub_intents = [intent]
             if "eta" in lowered:
@@ -212,18 +189,6 @@ def intent_node(state: GraphState) -> GraphState:
                 sub_intents.append("delay")
             if "status" in lowered:
                 sub_intents.append("status")
-            if is_weather_enabled() and _contains_weather_terms(lowered):
-                sub_intents.append("weather")
-
-            if (
-                is_weather_enabled()
-                and _contains_weather_terms(lowered)
-                and intent
-                not in {"greeting", "end", "company_overview", "clarification"}
-            ):
-                intent = "retrieval"
-                if "retrieval" not in sub_intents:
-                    sub_intents.insert(0, "retrieval")
 
             # Deduplicate while preserving order
             seen = set()
@@ -262,22 +227,17 @@ def intent_node(state: GraphState) -> GraphState:
         if is_chart_enabled():
             analytics_instruction = "   - 'analytics': Use for general aggregating queries, summaries, counts, or listing distinct values.\n"
 
-        weather_instruction = ""
-        if is_weather_enabled():
-            weather_instruction = "   - Add 'weather' to the list if the user asks about weather, storm, temperature, or environmental impact.\n"
-
         system_prompt = (
             "You are an intent classifier for a Logistics Shipment Q&A Bot.\n"
             "Analyze the user's input and extract:\n"
             "1. Primary Intent: One of ['retrieval', 'analytics', 'greeting', 'company_overview', 'clarification', 'end'].\n"
             f"{analytics_instruction}"
-            "   - 'retrieval': Use for specific single-shipment lookup or asking about status/weather impact for specific shipments.\n"
+            "   - 'retrieval': Use for specific single-shipment lookup or asking about status/ETA/delay for specific shipments.\n"
             "   - 'clarification': Use IF AND ONLY IF the user's query is too vague, ambiguous, or lacks necessary context.\n"
             "   - 'greeting': Use for 'hi', 'hello', etc.\n"
             "   - 'company_overview': Use for questions about the company itself.\n"
             "   - 'end': Use ONLY for explicit farewells (like 'bye', 'goodbye', 'close session'). DO NOT use for general praise or 'thank you'.\n"
-            "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'weather', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
-            f"{weather_instruction}"
+            "2. All Intents: A list of all applicable intents (include sub-intents like ['status', 'delay', 'eta_window', 'hot', 'fd', 'in-cd']).\n"
             "3. Sentiment: One of ['positive', 'neutral', 'negative'].\n\n"
             "Output JSON ONLY:\n"
             "{\n"
@@ -329,17 +289,6 @@ def intent_node(state: GraphState) -> GraphState:
             ]
             if intent not in valid_intents:
                 intent = "retrieval"
-
-            if is_weather_enabled() and _contains_weather_terms(raw_text or text):
-                if "weather" not in sub_intents:
-                    sub_intents = list(sub_intents) + ["weather"]
-                if intent not in {
-                    "greeting",
-                    "company_overview",
-                    "clarification",
-                    "end",
-                }:
-                    intent = "retrieval"
 
         except Exception as e:
             logger.error(f"Intent classification failed: {e}")

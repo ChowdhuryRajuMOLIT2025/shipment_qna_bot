@@ -17,7 +17,6 @@ from shipment_qna_bot.graph.nodes.retrieve import retrieve_node
 from shipment_qna_bot.graph.nodes.router import route_node
 from shipment_qna_bot.graph.nodes.static_greet_info_handler import \
     static_greet_info_node
-from shipment_qna_bot.graph.nodes.weather_impact import weather_impact_node
 from shipment_qna_bot.graph.state import GraphState
 from shipment_qna_bot.tools.date_tools import get_today_date
 
@@ -55,7 +54,6 @@ def build_graph():
     workflow.add_node("planner", planner_node)
     workflow.add_node("analytics_planner", analytics_planner_node)
     workflow.add_node("retrieve", retrieve_node)
-    workflow.add_node("weather_impact", weather_impact_node)
     workflow.add_node("answer", answer_node)
     workflow.add_node("judge", judge_node)
     workflow.add_node("static_info", static_greet_info_node)
@@ -78,7 +76,6 @@ def build_graph():
         {
             "retrieval": "planner",
             "analytics": "analytics_planner",
-            "weather_impact": "weather_impact",
             "static_info": "static_info",
             "clarification": "clarification",
             "end": END,
@@ -90,7 +87,6 @@ def build_graph():
     workflow.add_edge(
         "analytics_planner", END
     )  # Output of analytics is a final answer, skip judge/retrieval
-    workflow.add_edge("weather_impact", END)
     workflow.add_edge("retrieve", "answer")
     workflow.add_edge("answer", "judge")
     workflow.add_edge("static_info", END)

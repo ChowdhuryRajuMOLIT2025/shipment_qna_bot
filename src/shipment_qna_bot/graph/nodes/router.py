@@ -1,7 +1,6 @@
 from typing import Literal
 
 from shipment_qna_bot.graph.state import GraphState
-from shipment_qna_bot.logging.logger import logger
 
 
 def route_node(
@@ -9,7 +8,6 @@ def route_node(
 ) -> Literal[
     "retrieval",
     "analytics",
-    "weather_impact",
     "static_info",
     "clarification",
     "end",
@@ -28,9 +26,6 @@ def route_node(
         return "end"
     if intent == "end":
         return "end"
-    if "weather" in sub_intents:
-        logger.info("Routing query to dedicated weather impact path.")
-        return "weather_impact"
     if intent == "analytics" and (
         state.get("topic_shift_candidate") or state.get("analytics_scope_candidate")
     ):

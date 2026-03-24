@@ -92,6 +92,21 @@ def test_normalizer_uses_previous_result_scope_hint():
     assert new_state.get("analytics_context_mode") == "previous_result"
     assert new_state.get("analytics_scope_candidate") is None
 
+def test_normalizer_defaults_ambiguous_followup_to_previous_result_scope():
+    state = {
+        "question_raw": "which ones are delayed?",
+        "messages": [],
+        "last_analytics_result_selector": {
+            "kind": "id_sets",
+            "ids": {"container_number": ["SEGU5935510", "TGHU1234567"]},
+            "row_count": 2,
+        },
+        "last_analytics_result_count": 2,
+    }
+    new_state = normalize_node(state)
+    assert new_state.get("analytics_context_mode") == "previous_result"
+    assert new_state.get("analytics_scope_candidate") is None
+
 
 def test_normalizer_applies_pending_analytics_scope_choice():
     state = {

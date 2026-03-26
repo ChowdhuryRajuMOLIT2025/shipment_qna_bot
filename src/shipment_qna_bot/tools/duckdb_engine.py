@@ -25,6 +25,10 @@ class DuckDBAnalyticsEngine:
         return "'" + str(value).replace("'", "''") + "'"
 
     @staticmethod
+    def _quote_ident(name: str) -> str:
+        return '"' + str(name).replace('"', '""') + '"'
+
+    @staticmethod
     def _strip_code_fences(code: str) -> str:
         cleaned = (code or "").strip()
         if cleaned.startswith("```"):
@@ -33,6 +37,21 @@ class DuckDBAnalyticsEngine:
             )
             cleaned = re.sub(r"\s*```$", "", cleaned)
         return cleaned.strip()
+
+    @staticmethod
+    def _normalize_sql_dialect(sql: str) -> str:
+        """
+        Convert common non-DuckDB SQL function names emitted by the LLM.
+        """
+        normalized = (sql or "").strip()
+
+        # SQLite-style date function frequently appears in generated SQL.
+        # DuckDB equivalent is `julian(...)`.
+        normalized = re.sub(
+            r"\bjulianday\s*\(", "julian(", normalized, flags=re.IGNORECASE
+        )
+
+        return normalized
 
     @staticmethod
     def _to_json_safe_value(v: Any) -> Any:
@@ -57,10 +76,37 @@ class DuckDBAnalyticsEngine:
         return v
 
     @classmethod
-    def _build_rls_filter(cls, consignee_codes: List[str]) -> str:
-        safe_codes = [str(c).replace("'", "''") for c in consignee_codes if str(c)]
-        codes_str = ", ".join([f"'{c}'" for c in safe_codes])
-        return f"list_has_any(consignee_codes, [{codes_str}]::VARCHAR[])"
+    def _build_rls_filter(
+        cls, consignee_codes: List[str], schema: Dict[str, str]
+    ) -> str:
+        safe_codes = [
+            str(c).strip().replace("'", "''") for c in consignee_codes if str(c).strip()
+        ]
+        if not safe_codes:
+            return "FALSE"
+
+        if "consignee_codes" in schema:
+            codes_str = ", ".join([f"'{c}'" for c in safe_codes])
+            return f"list_has_any(consignee_codes, [{codes_str}]::VARCHAR[])"
+
+        if "consignee_code_multiple" in schema:
+            # Example source values: "WILSON SPORTING GOODS, CO.(0000866)"
+            clauses = [
+                "regexp_matches("
+                "upper(CAST(consignee_code_multiple AS VARCHAR)), "
+                f"'(^|[^0-9A-Z]){code.upper()}([^0-9A-Z]|$)')"
+                for code in safe_codes
+            ]
+            return "(" + " OR ".join(clauses) + ")"
+
+        return "FALSE"
+
+    def _get_parquet_schema(self, parquet_path: str) -> Dict[str, str]:
+        parquet_sql = parquet_path.replace("'", "''")
+        rows = self.con.execute(
+            f"DESCRIBE SELECT * FROM read_parquet('{parquet_sql}')"
+        ).fetchall()
+        return {str(r[0]): str(r[1]) for r in rows}
 
     @classmethod
     def _normalize_selector_values(cls, raw_values: Any) -> List[str]:
@@ -82,7 +128,7 @@ class DuckDBAnalyticsEngine:
 
     @classmethod
     def _build_selector_filter(
-        cls, selector: Optional[Dict[str, Any]]
+        cls, selector: Optional[Dict[str, Any]], schema: Dict[str, str]
     ) -> Optional[str]:
         if not isinstance(selector, dict):
             return None
@@ -94,26 +140,85 @@ class DuckDBAnalyticsEngine:
         clauses: List[str] = []
 
         container_ids = cls._normalize_selector_values(raw_ids.get("container_number"))
-        if container_ids:
+        if container_ids and "container_number" in schema:
             quoted = ", ".join(cls._sql_quote(value) for value in container_ids)
             clauses.append(f"upper(CAST(container_number AS VARCHAR)) IN ({quoted})")
 
-        for field in ("po_numbers", "booking_numbers", "obl_nos"):
+        field_candidates = {
+            "po_numbers": ["po_numbers", "po_number_multiple"],
+            "booking_numbers": ["booking_numbers", "booking_number_multiple"],
+            "obl_nos": ["obl_nos", "obl_no_multiple", "obl_number_multiple"],
+        }
+
+        for field, candidates in field_candidates.items():
             field_ids = cls._normalize_selector_values(raw_ids.get(field))
             if not field_ids:
                 continue
+
+            actual_field = next((c for c in candidates if c in schema), None)
+            if not actual_field:
+                continue
+
             quoted = ", ".join(cls._sql_quote(value) for value in field_ids)
-            clauses.append(
-                f"({field} IS NOT NULL AND EXISTS ("
-                f"SELECT 1 FROM UNNEST({field}) AS t(val) "
-                f"WHERE upper(CAST(val AS VARCHAR)) IN ({quoted})"
-                f"))"
-            )
+            field_type = schema.get(actual_field, "").upper()
+            if "[]" in field_type or field_type.startswith("LIST"):
+                clauses.append(
+                    f"({actual_field} IS NOT NULL AND EXISTS ("
+                    f"SELECT 1 FROM UNNEST({actual_field}) AS t(val) "
+                    f"WHERE upper(CAST(val AS VARCHAR)) IN ({quoted})"
+                    f"))"
+                )
+            else:
+                token_matches = [
+                    "regexp_matches("
+                    f"upper(CAST({actual_field} AS VARCHAR)), "
+                    f"'(^|[^0-9A-Z]){v.upper()}([^0-9A-Z]|$)')"
+                    for v in field_ids
+                ]
+                clauses.append("(" + " OR ".join(token_matches) + ")")
 
         if not clauses:
             return None
 
         return "(" + " OR ".join(clauses) + ")"
+
+    @classmethod
+    def _build_projection_sql(cls, schema: Dict[str, str]) -> str:
+        # Common date fields in this dataset can appear as text like 10-NOV-2024.
+        # Normalize in the view so planner-generated CAST(... AS DATE) remains safe.
+        date_like = {
+            "etd_lp",
+            "etd_flp",
+            "eta_dp",
+            "eta_fd",
+            "ata_dp",
+            "ata_flp",
+            "atd_lp",
+            "atd_flp",
+            "derived_ata_dp",
+            "delivery_date_to_consignee",
+            "empty_container_return_date",
+            "rail_load_dp_date",
+            "rail_departure_dp_date",
+            "rail_arrival_destination_date",
+        }
+
+        pieces: List[str] = []
+        for col in schema.keys():
+            qcol = cls._quote_ident(col)
+            if col in date_like:
+                pieces.append(
+                    "COALESCE("
+                    f"TRY_CAST({qcol} AS DATE), "
+                    f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%d-%b-%Y') AS DATE), "
+                    f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%d-%B-%Y') AS DATE), "
+                    f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%Y-%m-%d') AS DATE)"
+                    f") AS {qcol}"
+                )
+            else:
+                pieces.append(qcol)
+
+        return ",\n                ".join(pieces)
 
     def prepare_view(
         self,
@@ -122,9 +227,10 @@ class DuckDBAnalyticsEngine:
         selector: Optional[Dict[str, Any]] = None,
     ) -> None:
         parquet_sql = parquet_path.replace("'", "''")
-        where_clauses = [self._build_rls_filter(consignee_codes)]
+        schema = self._get_parquet_schema(parquet_path)
+        where_clauses = [self._build_rls_filter(consignee_codes, schema)]
 
-        selector_filter = self._build_selector_filter(selector)
+        selector_filter = self._build_selector_filter(selector, schema)
         if selector_filter:
             where_clauses.append(selector_filter)
 
@@ -132,9 +238,13 @@ class DuckDBAnalyticsEngine:
         if not where_sql:
             where_sql = "TRUE"
 
+        projection_sql = self._build_projection_sql(schema)
+
         rls_query = f"""
             CREATE OR REPLACE VIEW df AS
-            SELECT * FROM read_parquet('{parquet_sql}')
+            SELECT
+                {projection_sql}
+            FROM read_parquet('{parquet_sql}')
             WHERE {where_sql}
         """
         self.con.execute(rls_query)
@@ -150,7 +260,7 @@ class DuckDBAnalyticsEngine:
         Executes a SQL query against ds.
         Applies RLS automatically.
         """
-        sql = self._strip_code_fences(sql)
+        sql = self._normalize_sql_dialect(self._strip_code_fences(sql))
         logger.info(f"DDB Engine running: {parquet_path}")
         logger.info(f"QRY:\n{sql}")
 

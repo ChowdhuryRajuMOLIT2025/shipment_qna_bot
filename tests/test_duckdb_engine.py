@@ -85,3 +85,40 @@ def test_execute_query_previous_result_selector(sample_parquet):
     assert result["success"] is True
     assert result["filtered_rows"] == 2
     assert result["result_rows"][0]["total"] == 2
+
+
+def test_normalize_sql_dialect_date_add_signature():
+    sql = "SELECT DATE_ADD('day', 5, CURRENT_DATE) AS d"
+    normalized = DuckDBAnalyticsEngine._normalize_sql_dialect(sql)
+
+    assert "DATE_ADD" not in normalized.upper()
+    assert "CURRENT_DATE + INTERVAL 5 DAY" in normalized.upper()
+
+
+def test_projection_sql_adds_date_alias_columns():
+    schema = {
+        "eta_dp": "DATE",
+        "ata_dp": "DATE",
+        "delivery_date_to_consignee": "DATE",
+    }
+
+    projection = DuckDBAnalyticsEngine._build_projection_sql(schema)
+
+    assert 'TRY_CAST("eta_dp" AS DATE)' in projection
+    assert 'AS "best_eta_dp_date"' in projection
+    assert 'TRY_CAST("ata_dp" AS DATE)' in projection
+    assert 'AS "ata_dp_date"' in projection
+    assert 'TRY_CAST("delivery_date_to_consignee" AS DATE)' in projection
+    assert 'AS "delivery_to_consignee_date"' in projection
+
+
+def test_projection_sql_normalizes_existing_date_alias_columns():
+    schema = {
+        "ata_dp_date": "VARCHAR",
+        "best_eta_dp_date": "VARCHAR",
+    }
+
+    projection = DuckDBAnalyticsEngine._build_projection_sql(schema)
+
+    assert 'TRY_CAST("ata_dp_date" AS DATE)' in projection
+    assert 'TRY_CAST("best_eta_dp_date" AS DATE)' in projection

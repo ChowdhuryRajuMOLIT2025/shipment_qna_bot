@@ -51,6 +51,17 @@ class DuckDBAnalyticsEngine:
             r"\bjulianday\s*\(", "julian(", normalized, flags=re.IGNORECASE
         )
 
+        # MySQL-style DATE_ADD(unit, amount, date_expr) appears in repaired SQL.
+        # Convert to DuckDB interval arithmetic: date_expr + INTERVAL amount UNIT.
+        normalized = re.sub(
+            r"\bdate_add\s*\(\s*'(?P<unit>day|days|month|months|year|years)'\s*,\s*(?P<amount>[+-]?\d+)\s*,\s*(?P<expr>[^\)]+?)\s*\)",
+            lambda m: (
+                f"({m.group('expr').strip()} + INTERVAL {m.group('amount')} {m.group('unit').upper().rstrip('S')})"
+            ),
+            normalized,
+            flags=re.IGNORECASE,
+        )
+
         return normalized
 
     @staticmethod
@@ -190,33 +201,62 @@ class DuckDBAnalyticsEngine:
             "etd_lp",
             "etd_flp",
             "eta_dp",
+            "eta_dp_date",
+            "best_eta_dp_date",
             "eta_fd",
+            "eta_fd_date",
+            "best_eta_fd_date",
             "ata_dp",
+            "ata_dp_date",
             "ata_flp",
             "atd_lp",
             "atd_flp",
             "derived_ata_dp",
+            "derived_ata_dp_date",
             "delivery_date_to_consignee",
+            "delivery_to_consignee_date",
             "empty_container_return_date",
             "rail_load_dp_date",
             "rail_departure_dp_date",
             "rail_arrival_destination_date",
+            "predictive_eta",
         }
+
+        def _date_expr(qcol: str) -> str:
+            return (
+                "COALESCE("
+                f"TRY_CAST({qcol} AS DATE), "
+                f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%d-%b-%Y') AS DATE), "
+                f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%d-%B-%Y') AS DATE), "
+                f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%Y-%m-%d') AS DATE)"
+                f")"
+            )
 
         pieces: List[str] = []
         for col in schema.keys():
             qcol = cls._quote_ident(col)
             if col in date_like:
-                pieces.append(
-                    "COALESCE("
-                    f"TRY_CAST({qcol} AS DATE), "
-                    f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%d-%b-%Y') AS DATE), "
-                    f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%d-%B-%Y') AS DATE), "
-                    f"CAST(TRY_STRPTIME(CAST({qcol} AS VARCHAR), '%Y-%m-%d') AS DATE)"
-                    f") AS {qcol}"
-                )
+                pieces.append(f"{_date_expr(qcol)} AS {qcol}")
             else:
                 pieces.append(qcol)
+
+        # Compatibility aliases for planner/LLM date names that may not exist in raw parquet.
+        # These aliases keep generated SQL resilient without widening data access.
+        alias_map = {
+            "ata_dp_date": "ata_dp",
+            "eta_dp_date": "eta_dp",
+            "best_eta_dp_date": "eta_dp",
+            "derived_ata_dp_date": "derived_ata_dp",
+            "eta_fd_date": "eta_fd",
+            "best_eta_fd_date": "eta_fd",
+            "delivery_to_consignee_date": "delivery_date_to_consignee",
+        }
+        for alias_col, source_col in alias_map.items():
+            if alias_col in schema or source_col not in schema:
+                continue
+            src_qcol = cls._quote_ident(source_col)
+            alias_qcol = cls._quote_ident(alias_col)
+            pieces.append(f"{_date_expr(src_qcol)} AS {alias_qcol}")
 
         return ",\n                ".join(pieces)
 
